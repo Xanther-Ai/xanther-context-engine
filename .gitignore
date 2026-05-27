@@ -1,0 +1,93 @@
+# Environment variables
+.env
+.env.*
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+dist/
+build/
+.eggs/
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Neo4j data
+neo4j_data/
+
+# Node
+node_modules/
+website/node_modules/
+website/.next/
+website/out/
+dashboard/.next/
+xanther-website/.next/
+xanther-website/out/
+
+# CDK
+infra/cdk.out/
+infra/node_modules/
+
+# Private infrastructure & deployment (separate repo)
+infra/
+scripts/
+deploy/
+lambda/
+services/
+dashboard/
+xanther-website/
+tools/
+packages/
+.kiro/specs/xce-saas-platform/
+.kiro/specs/session-memory-sync/
+.kiro/specs/xanther-website/
+.kiro/specs/xce-competitive-demo/
+.kiro/specs/yc-application-prep/
+.kiro/hooks/
+docs/yc-application/
+docs/marketing/
+swe_results/
+
+# Hypothesis
+.hypothesis/
+
+# Ruff cache
+.ruff_cache/
+
+# Pytest cache
+.pytest_cache/
+
+# Wrangler
+.wrangler/
+
+# Temp analysis
+/tmp/
+
+# Lambda layer (large, built separately)
+infra/lambda/layer/
+
+# Xanther CLI config (contains API key)
+.xanther/
+
+# Session logs (contain sensitive data)
+tools/kiro-remote/session.jsonl
+
+# Kiro settings (contains tokens)
+.kiro/settings/
+
+# CDK context (contains account info)
+infra/cdk.context.json

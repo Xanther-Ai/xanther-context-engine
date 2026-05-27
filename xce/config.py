@@ -1,0 +1,74 @@
+"""Environment-based configuration for XCE."""
+
+from __future__ import annotations
+
+import os
+from dataclasses import dataclass, field
+from pathlib import Path
+
+from dotenv import load_dotenv
+
+# Load .env from project root
+load_dotenv(Path(__file__).resolve().parent.parent / ".env")
+
+
+def _env(key: str, default: str = "") -> str:
+    return os.environ.get(key, default)
+
+
+def _env_int(key: str, default: int) -> int:
+    raw = os.environ.get(key)
+    if raw is None:
+        return default
+    return int(raw)
+
+
+@dataclass(frozen=True)
+class Neo4jConfig:
+    uri: str = field(default_factory=lambda: _env("NEO4J_URI", "bolt://localhost:7687"))
+    user: str = field(default_factory=lambda: _env("NEO4J_USER", "neo4j"))
+    password: str = field(default_factory=lambda: _env("NEO4J_PASSWORD", ""))
+
+    @property
+    def auth(self) -> tuple[str, str]:
+        return (self.user, self.password)
+
+
+@dataclass(frozen=True)
+class EmbeddingConfig:
+    api_key: str = field(default_factory=lambda: _env("OPENROUTER_API_KEY"))
+    model: str = field(
+        default_factory=lambda: _env("EMBEDDING_MODEL", "openai/text-embedding-3-small")
+    )
+    dimensions: int = field(default_factory=lambda: _env_int("EMBEDDING_DIMENSIONS", 512))
+    batch_size: int = field(default_factory=lambda: _env_int("EMBEDDING_BATCH_SIZE", 100))
+
+
+@dataclass(frozen=True)
+class SummarizerConfig:
+    api_key: str = field(default_factory=lambda: _env("KIMI_API_KEY"))
+    model: str = field(
+        default_factory=lambda: _env("SUMMARIZER_MODEL", "moonshot/kimi-k2.5")
+    )
+
+
+@dataclass(frozen=True)
+class DocGenConfig:
+    api_key: str = field(default_factory=lambda: _env("OPENROUTER_API_KEY"))
+    batch_size: int = field(default_factory=lambda: _env_int("DOC_GEN_BATCH_SIZE", 10))
+
+
+@dataclass(frozen=True)
+class Settings:
+    neo4j: Neo4jConfig = field(default_factory=Neo4jConfig)
+    embedding: EmbeddingConfig = field(default_factory=EmbeddingConfig)
+    summarizer: SummarizerConfig = field(default_factory=SummarizerConfig)
+    doc_gen: DocGenConfig = field(default_factory=DocGenConfig)
+    openrouter_api_key: str = field(default_factory=lambda: _env("OPENROUTER_API_KEY"))
+    kimi_api_key: str = field(default_factory=lambda: _env("KIMI_API_KEY"))
+    runpod_api_key: str = field(default_factory=lambda: _env("RUN_POD_API_KEY"))
+
+
+def get_settings() -> Settings:
+    """Create a Settings instance from current environment variables."""
+    return Settings()
