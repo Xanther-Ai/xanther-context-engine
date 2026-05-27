@@ -56,7 +56,7 @@ def _result_from_state(state: TraversalState, confidence: float = 0.5) -> Traver
 
 
 class ArchitectureAgent:
-    """Map files/symbols to HLD components and explain architectural context.
+    """Map files/symbols to Architecture components and explain architectural context.
 
     State machine: locate → expand → enrich → synthesize.
     Terminates at max_depth or 30 context items.
@@ -126,8 +126,8 @@ class ArchitectureAgent:
         for nid in state["visited_nodes"][:5]:
             # parent module
             parents = await self._gs.get_neighbors(nid, relation="contains", depth=1)
-            # HLD component
-            hld = await self._gs.get_neighbors(nid, relation="PART_OF_HLD", depth=1)
+            # Architecture component
+            hld = await self._gs.get_neighbors(nid, relation="PART_OF_ARCHITECTURE", depth=1)
             for item in parents + hld:
                 if item.node_id not in visited:
                     visited.append(item.node_id)
@@ -184,7 +184,7 @@ class ArchitectureAgent:
 
 
 class TraceabilityAgent:
-    """Build bidirectional trace chains: ASTNode ↔ ComponentDesc ↔ LLD ↔ HLD."""
+    """Build bidirectional trace chains: ASTNode ↔ ComponentDesc ↔ ComponentDoc ↔ ArchitectureDoc."""
 
     def __init__(self, graph_store: GraphStore) -> None:
         self._gs = graph_store
@@ -232,8 +232,8 @@ class TraceabilityAgent:
         for d in descs:
             chain.append({"type": "component_desc", "node_id": d.get("did", node_id), "data": d.get("d", {})})
 
-        if target_level in ("lld", "hld"):
-            # ComponentDescription → LLD
+        if target_level in ("component", "architecture"):
+            # ComponentDescription → ComponentDoc
             llds = await self._gs.execute_query(GraphQuery(
                 cypher=(
                     "MATCH (n:ASTNode {id: $nid})-[:DESCRIBED_BY]->(d)-[:DETAILED_IN]->(l) "
@@ -242,19 +242,19 @@ class TraceabilityAgent:
                 params={"nid": node_id},
             ))
             for l in llds:
-                chain.append({"type": "lld", "node_id": l.get("lid", node_id), "data": l.get("l", {})})
+                chain.append({"type": "component", "node_id": l.get("lid", node_id), "data": l.get("l", {})})
 
-        if target_level == "hld":
-            # ASTNode → HLD
+        if target_level == "architecture":
+            # ASTNode → ArchitectureDoc
             hlds = await self._gs.execute_query(GraphQuery(
                 cypher=(
-                    "MATCH (n:ASTNode {id: $nid})-[:PART_OF_HLD]->(h) "
+                    "MATCH (n:ASTNode {id: $nid})-[:PART_OF_ARCHITECTURE]->(h) "
                     "RETURN h, h.module_path AS hid"
                 ),
                 params={"nid": node_id},
             ))
             for h in hlds:
-                chain.append({"type": "hld", "node_id": h.get("hid", node_id), "data": h.get("h", {})})
+                chain.append({"type": "architecture", "node_id": h.get("hid", node_id), "data": h.get("h", {})})
 
         return chain
 

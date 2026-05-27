@@ -47,7 +47,7 @@ TOOLS: list[Tool] = [
                 "source": {"type": "string", "description": "Source code symbol or file"},
                 "target_level": {
                     "type": "string",
-                    "enum": ["code", "lld", "hld"],
+                    "enum": ["code", "component", "architecture"],
                     "description": "Target abstraction level",
                 },
                 "repo_id": {"type": "string", "description": "Repository identifier"},

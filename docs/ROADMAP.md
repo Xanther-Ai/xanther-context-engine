@@ -2,7 +2,7 @@
 
 ## Vision
 
-Xanther becomes the definitive codebase intelligence platform — combining the best of Serena (LSP-level navigation), Graphify (multi-modal knowledge graphs + visualization), and our own innovations (HLD/LLD depth, multi-hop traversal, impact analysis) into one tool that gets smarter over time.
+Xanther becomes the definitive codebase intelligence platform — combining the best of Serena (LSP-level navigation), Graphify (multi-modal knowledge graphs + visualization), and our own innovations (Architecture/Component depth, multi-hop traversal, impact analysis) into one tool that gets smarter over time.
 
 The core engine is source-available under AGPL-3.0 (free for individuals and open source projects, enterprise use requires a commercial license). The memory engine (XME) is proprietary and hosted-only — the moat that makes Xanther indispensable for teams.
 
@@ -30,7 +30,7 @@ The core engine is source-available under AGPL-3.0 (free for individuals and ope
 │   • God nodes + surprise edges   │   • Onboarding acceleration   │
 │                                  │   • Usage analytics           │
 │   AUGMENT (from XCE)             │                               │
-│   • LLM-generated HLD/LLD       │   ENTERPRISE                  │
+│   • LLM-generated Architecture/Component       │   ENTERPRISE                  │
 │   • Component descriptions       │   • SSO/SAML                  │
 │   • Semantic embeddings          │   • Private deployment        │
 │   • Privacy mode (no raw code)   │   • Audit logs                │
@@ -112,7 +112,7 @@ Xanther becomes the **single source of truth** for all project knowledge. It aut
                            ▼
 ┌─────────────────────────────────────────────────────────────┐
 │                    XANTHER GRAPH (Neo4j/SQLite)               │
-│   Code nodes + edges + HLD + LLD + communities + memory      │
+│   Code nodes + edges + Architecture + Component + communities + memory      │
 └──────────────────────────┬──────────────────────────────────┘
                            │
               xanther generate (auto-runs on git hooks)
@@ -122,7 +122,7 @@ Xanther becomes the **single source of truth** for all project knowledge. It aut
 │              AUTO-GENERATED OUTPUTS (always fresh)            │
 │                                                             │
 │   .xanther/                                                  │
-│   ├── ARCHITECTURE.md      # Auto-generated from HLD layer  │
+│   ├── ARCHITECTURE.md      # Auto-generated from Architecture layer  │
 │   ├── COMPONENTS.md        # Component descriptions          │
 │   ├── DEPENDENCIES.md      # Dependency graph summary        │
 │   ├── ONBOARDING.md        # Auto-generated getting started │
@@ -171,7 +171,7 @@ mcp:
 
 | Output | Source | Updates When |
 |--------|--------|-------------|
-| `ARCHITECTURE.md` | HLD layer (module roles, patterns, integration points) | Module structure changes |
+| `ARCHITECTURE.md` | Architecture layer (module roles, patterns, integration points) | Module structure changes |
 | `COMPONENTS.md` | ComponentDesc layer (per-class/function summaries) | Any code change |
 | `DEPENDENCIES.md` | Import/call edges (dependency graph) | Import changes |
 | `ONBOARDING.md` | God nodes + communities + entry points | Major structural changes |
@@ -227,7 +227,7 @@ The free tier alone is more useful than Serena + Graphify combined. The paid tie
 ---
 
 ### Goal
-Release XCE as the most complete codebase intelligence tool available — combining the best of Serena (LSP navigation, 40+ languages), Graphify (multi-modal, visualization, community detection), and XCE's unique strengths (HLD/LLD, traversal, impact analysis). Source-available under AGPL-3.0.
+Release XCE as the most complete codebase intelligence tool available — combining the best of Serena (LSP navigation, 40+ languages), Graphify (multi-modal, visualization, community detection), and XCE's unique strengths (Architecture/Component, traversal, impact analysis). Source-available under AGPL-3.0.
 
 ### 1.1 Multi-Language Support (19+ Languages)
 
@@ -314,7 +314,7 @@ xanther-out/
 - Force-directed layout (D3.js, lightweight)
 - Nodes colored by community (Leiden clustering)
 - Node size by degree centrality (god nodes are bigger)
-- Click node → show details (description, connections, HLD role)
+- Click node → show details (description, connections, architectural role)
 - Search/filter by module, language, node type
 - Surprise edges highlighted in red
 - Exportable as PNG/SVG
@@ -331,7 +331,7 @@ xanther-out/
 **Leiden algorithm integration:**
 - Run after graph construction
 - Assigns each node to a community
-- Communities become the basis for HLD generation (each community = one HLD module)
+- Communities become the basis for Architecture generation (each community = one Architecture module)
 - Stored as `community_id` property on each ASTNode
 
 **Graph metrics computed:**
@@ -388,7 +388,7 @@ After `xanther init`, the following are auto-generated and kept fresh:
 
 ```
 .xanther/
-├── ARCHITECTURE.md      # Generated from HLD layer
+├── ARCHITECTURE.md      # Generated from Architecture layer
 ├── COMPONENTS.md        # All component descriptions
 ├── DEPENDENCIES.md      # Import/call graph summary
 ├── ONBOARDING.md        # Entry points, god nodes, getting started
@@ -508,20 +508,20 @@ Solve the #1 technical criticism: stale indexes. Make Xanther always-fresh via g
    - When a function signature changes → mark all callers as "needs re-enrichment"
    - When a file is deleted → remove all nodes + edges for that file
    - When a new file is added → full parse + relate + augment for that file only
-   - HLD invalidation: only when module-level structure changes
+   - Architecture invalidation: only when module-level structure changes
    - Propagate invalidation through dependency edges
 
 3. **Semantic Caching (From Graphify)**
    - Content-hash each file before processing
    - If hash unchanged → skip parsing entirely
-   - Cache ComponentDesc/LLD/HLD by node content hash
+   - Cache ComponentDesc/Component/Architecture by node content hash
    - Cache embeddings by node content hash
    - Result: re-indexing a 10K file repo with 5 changed files takes <10 seconds
 
-4. **Incremental LLD/HLD Updates**
+4. **Incremental Component/Architecture Updates**
    - Re-generate ComponentDesc only for changed nodes
-   - Re-generate LLD only for changed functions/methods
-   - HLD: re-generate only when >5 LLD changes in a module (threshold-based)
+   - Re-generate ComponentDoc only for changed functions/methods
+   - Architecture: re-generate only when >5 Component changes in a module (threshold-based)
    - Use git diff to determine blast radius
 
 5. **Freshness Indicator**
@@ -564,7 +564,7 @@ Build the proprietary memory layer that makes Xanther indispensable for teams. T
 ```
 Neo4j Graph (extended)
 ├── ASTNode, Edges, Embeddings (XCE - exists)
-├── ComponentDesc, LLD, HLD (XCE - exists)
+├── ComponentDesc, ComponentDoc, ArchitectureDoc (XCE - exists)
 ├── SessionNode (new)
 │   ├── session_id, timestamp, agent_type, model
 │   ├── problem_statement, outcome (success/failure)
@@ -829,7 +829,7 @@ Build features that justify enterprise pricing ($500-5000/mo) and require commer
     ─────────────────  │  ──────────────────────┼─────
     (Persistent +      │                        │
      Team Memory)      │                        │  ★ XANTHER
-                       │                        │  (graph + HLD/LLD + viz
+                       │                        │  (graph + Architecture/Component + viz
                        │                        │   + memory + team intel
                        │                        │   + 19 languages + multi-modal)
                        │                        │

@@ -16,7 +16,7 @@ import httpx
 import pytest
 
 from xce.indexing.doc_generator import DocGenerator, MAX_RETRIES, BASE_DELAY_S
-from xce.models import ASTNode, ComponentDescription, HLDDocument, LLDDocument, NodeKind
+from xce.models import ASTNode, ComponentDescription, ArchitectureDoc, ComponentDoc, NodeKind
 
 
 # ---------------------------------------------------------------------------
@@ -159,10 +159,10 @@ class TestGenerateComponentDesc:
 
 
 # ---------------------------------------------------------------------------
-# 4.4: generate_lld — prompt construction
+# 4.4: generate_component — prompt construction
 # ---------------------------------------------------------------------------
 
-class TestGenerateLLD:
+class TestGenerateComponent:
     @pytest.mark.asyncio
     async def test_prompt_includes_source_and_desc(self):
         gen = DocGenerator(api_key="test-key")
@@ -182,8 +182,8 @@ class TestGenerateLLD:
 
         gen._client.post = mock_post  # type: ignore[assignment]
 
-        lld = await gen.generate_lld(node, desc)
-        assert isinstance(lld, LLDDocument)
+        lld = await gen.generate_component(node, desc)
+        assert isinstance(lld, ComponentDoc)
         assert lld.algorithm_description == "Sorts input"
         assert lld.component_id == node.id
 
@@ -211,16 +211,16 @@ class TestGenerateLLD:
 
         gen._client.post = mock_post  # type: ignore[assignment]
 
-        await gen.generate_lld(node, desc, callees=callees)
+        await gen.generate_component(node, desc, callees=callees)
         user_msg = captured_messages[0][1]["content"]
         assert "helper_fn" in user_msg
 
 
 # ---------------------------------------------------------------------------
-# 4.5: generate_hld — prompt construction
+# 4.5: generate_architecture — prompt construction
 # ---------------------------------------------------------------------------
 
-class TestGenerateHLD:
+class TestGenerateArchitecture:
     @pytest.mark.asyncio
     async def test_prompt_includes_module_nodes(self):
         gen = DocGenerator(api_key="test-key")
@@ -246,8 +246,8 @@ class TestGenerateHLD:
 
         gen._client.post = mock_post  # type: ignore[assignment]
 
-        hld = await gen.generate_hld(nodes, descs)
-        assert isinstance(hld, HLDDocument)
+        hld = await gen.generate_architecture(nodes, descs)
+        assert isinstance(hld, ArchitectureDoc)
         assert hld.module_path == "src/views"
         assert hld.architectural_role == "controller"
 
@@ -258,7 +258,7 @@ class TestGenerateHLD:
     @pytest.mark.asyncio
     async def test_empty_nodes_returns_pending(self):
         gen = DocGenerator(api_key="test-key")
-        hld = await gen.generate_hld([], [])
+        hld = await gen.generate_architecture([], [])
         assert hld.architectural_role == "doc_pending"
 
 
@@ -414,7 +414,7 @@ class TestRetryBehavior:
         gen._client.post = mock_post  # type: ignore[assignment]
 
         with patch("xce.indexing.doc_generator.asyncio.sleep", new_callable=AsyncMock):
-            lld = await gen.generate_lld(node, desc)
+            lld = await gen.generate_component(node, desc)
 
         assert lld.algorithm_description == "doc_pending"
 
@@ -429,6 +429,6 @@ class TestRetryBehavior:
         gen._client.post = mock_post  # type: ignore[assignment]
 
         with patch("xce.indexing.doc_generator.asyncio.sleep", new_callable=AsyncMock):
-            hld = await gen.generate_hld(nodes, [])
+            hld = await gen.generate_architecture(nodes, [])
 
         assert hld.architectural_role == "doc_pending"

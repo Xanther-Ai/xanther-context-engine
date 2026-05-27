@@ -112,7 +112,7 @@ class TestRouting:
         server = _make_server()
         results = await server.handle_tool_call(
             "xce_trace",
-            {"source": "foo", "target_level": "hld", "repo_id": "repo1"},
+            {"source": "foo", "target_level": "architecture", "repo_id": "repo1"},
         )
         data = json.loads(results[0].text)
         assert "contexts" in data

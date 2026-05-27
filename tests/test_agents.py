@@ -117,7 +117,7 @@ class TestTraceabilityAgent:
     async def test_returns_traversal_result(self):
         gs = _mock_graph_store(execute_query_return=[{"nid": "repo1:a.py:function:foo"}])
         agent = TraceabilityAgent(gs)
-        result = await agent.trace("foo", "hld", "repo1")
+        result = await agent.trace("foo", "architecture", "repo1")
         assert isinstance(result, TraversalResult)
 
     @pytest.mark.asyncio
@@ -147,20 +147,20 @@ class TestTraceabilityAgent:
                 # DETAILED_IN
                 return [{"l": {"algo": "BFS"}, "lid": "repo1:a.py:function:foo"}]
             elif call_count == 4:
-                # PART_OF_HLD
+                # PART_OF_ARCHITECTURE
                 return [{"h": {"role": "service"}, "hid": "src/services"}]
             return []
 
         gs = _mock_graph_store(execute_query_side_effect=_side_effect)
         agent = TraceabilityAgent(gs)
-        result = await agent.trace("foo", "hld", "repo1")
+        result = await agent.trace("foo", "architecture", "repo1")
         assert len(result.contexts) >= 1
 
     @pytest.mark.asyncio
     async def test_no_source_found(self):
         gs = _mock_graph_store(execute_query_return=[])
         agent = TraceabilityAgent(gs)
-        result = await agent.trace("nonexistent", "hld", "repo1")
+        result = await agent.trace("nonexistent", "architecture", "repo1")
         assert result.nodes_visited == 0
         assert result.confidence == 0.0
 

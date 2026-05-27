@@ -180,22 +180,22 @@ async def index_repository(
         all_descs.extend(descs)
         await graph_store.upsert_documentation(descs)
 
-    # Generate LLD for functions/methods
+    # Generate ComponentDoc for functions/methods
     desc_map = {d.node_id: d for d in all_descs}
     func_nodes = [n for n in all_nodes if n.kind in (NodeKind.FUNCTION, NodeKind.METHOD)]
     for node in func_nodes:
         desc = desc_map.get(node.id)
         if desc:
-            lld = await doc_generator.generate_lld(node, desc)
-            await graph_store.upsert_documentation([lld])
+            component_doc = await doc_generator.generate_component(node, desc)
+            await graph_store.upsert_documentation([component_doc])
             result.docs_count += 1
 
-    # Step 6: Generate HLD per module
+    # Step 6: Generate ArchitectureDoc per module
     modules = group_by_module(all_nodes)
     for module_path, module_nodes in modules.items():
         module_descs = [desc_map[n.id] for n in module_nodes if n.id in desc_map]
-        hld = await doc_generator.generate_hld(module_nodes, module_descs)
-        await graph_store.upsert_documentation([hld])
+        arch_doc = await doc_generator.generate_architecture(module_nodes, module_descs)
+        await graph_store.upsert_documentation([arch_doc])
         result.docs_count += 1
 
     result.docs_count += len(all_descs)

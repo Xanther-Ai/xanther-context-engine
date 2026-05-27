@@ -282,7 +282,7 @@ class _FakeComponentDesc:
 
 
 @dataclass
-class _FakeLLDDoc:
+class _FakeComponentDoc:
     component_id: str
     algorithm_description: str
     data_flow: str
@@ -291,7 +291,7 @@ class _FakeLLDDoc:
 
 
 @dataclass
-class _FakeHLDDoc:
+class _FakeArchitectureDoc:
     module_path: str
     architectural_role: str
     design_patterns: list[str]
@@ -326,7 +326,7 @@ class TestUpsertDocumentation:
         store._driver = driver
         store._embedding_dimensions = 512
 
-        doc = _FakeLLDDoc(
+        doc = _FakeComponentDoc(
             component_id="repo1:a.py:function:foo",
             algorithm_description="BFS",
             data_flow="in -> out",
@@ -337,7 +337,7 @@ class TestUpsertDocumentation:
         assert count == 1
         cypher = session.run.call_args[0][0]
         assert "DETAILED_IN" in cypher
-        assert "LLDDoc" in cypher
+        assert "ComponentDoc" in cypher
 
     @pytest.mark.asyncio
     async def test_hld_doc(self):
@@ -346,7 +346,7 @@ class TestUpsertDocumentation:
         store._driver = driver
         store._embedding_dimensions = 512
 
-        doc = _FakeHLDDoc(
+        doc = _FakeArchitectureDoc(
             module_path="src/views",
             architectural_role="controller",
             design_patterns=["MVC"],
@@ -356,8 +356,8 @@ class TestUpsertDocumentation:
         count = await store.upsert_documentation([doc])
         assert count == 1
         cypher = session.run.call_args[0][0]
-        assert "PART_OF_HLD" in cypher
-        assert "HLDDoc" in cypher
+        assert "PART_OF_ARCHITECTURE" in cypher
+        assert "ArchitectureDoc" in cypher
 
     @pytest.mark.asyncio
     async def test_empty_docs(self):

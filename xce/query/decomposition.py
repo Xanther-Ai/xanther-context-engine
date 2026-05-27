@@ -307,7 +307,7 @@ class ProblemDecompositionAgent:
         if sub_task.target_agent == "architecture":
             return await agent.query(query, repo_id)
         elif sub_task.target_agent == "trace":
-            return await agent.trace(query, "hld", repo_id)
+            return await agent.trace(query, "architecture", repo_id)
         elif sub_task.target_agent == "impact":
             return await agent.analyze([query], repo_id)
         elif sub_task.target_agent == "search":

@@ -38,10 +38,10 @@ The key difference from embedding-only search (like Augment Code): PRAT captures
 
 ```
 ┌─────────────────────────────────────────────────────────┐
-│                    HLD (High-Level Design)                │
+│                    Architecture                          │
 │  Modules, architectural patterns, system boundaries      │
 ├─────────────────────────────────────────────────────────┤
-│                    LLD (Low-Level Design)                 │
+│                    Components                             │
 │  Components, classes, interfaces, data flow              │
 ├─────────────────────────────────────────────────────────┤
 │                    Code Level                             │
@@ -53,7 +53,7 @@ The key difference from embedding-only search (like Augment Code): PRAT captures
 
 | Feature | XCE | Augment Code | Serena | Graphify |
 |---------|-----|-------------|--------|----------|
-| Architecture awareness | ✅ HLD→LLD→Code | ❌ Flat embeddings | ❌ Symbol-level only | ✅ Knowledge graph |
+| Architecture awareness | ✅ Architecture→Component→Code | ❌ Flat embeddings | ❌ Symbol-level only | ✅ Knowledge graph |
 | Impact analysis | ✅ Predicts blast radius | ❌ | ❌ | ❌ |
 | Call graph traversal | ✅ Full chain | ❌ | ✅ LSP-based | ❌ |
 | Semantic search | ✅ Embeddings + graph | ✅ Embeddings | ❌ | ✅ |

@@ -141,7 +141,7 @@ Do NOT modify test files. Only fix the source code.
    - Others can't predict regressions
 
 3. **Issues in deeply nested code** (16379, 16873)
-   - XCE's HLD→LLD→function hierarchy finds the right level fast
+   - XCE's Architecture→Component→function hierarchy finds the right level fast
    - Others search linearly
 
 ### Where Others Might Tie or Win

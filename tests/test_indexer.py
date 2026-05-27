@@ -25,7 +25,7 @@ from xce.indexing.indexer import (
     group_by_module,
     index_repository,
 )
-from xce.models import ASTNode, ComponentDescription, HLDDocument, LLDDocument, NodeKind
+from xce.models import ASTNode, ComponentDescription, ArchitectureDoc, ComponentDoc, NodeKind
 from xce.parser import ASTParser
 
 
@@ -176,8 +176,8 @@ class TestIndexRepository:
                     for n in nodes
                 ]
 
-            async def mock_generate_lld(node, desc, callees=None):
-                return LLDDocument(
+            async def mock_generate_component(node, desc, callees=None):
+                return ComponentDoc(
                     component_id=node.id,
                     algorithm_description=f"Algorithm for {node.name}",
                     data_flow="in -> out",
@@ -185,10 +185,10 @@ class TestIndexRepository:
                     edge_cases=[],
                 )
 
-            async def mock_generate_hld(module_nodes, descs):
+            async def mock_generate_architecture(module_nodes, descs):
                 fp = module_nodes[0].filepath if module_nodes else ""
                 mp = fp.rsplit("/", 1)[0] if "/" in fp else "."
-                return HLDDocument(
+                return ArchitectureDoc(
                     module_path=mp,
                     architectural_role="utility",
                     design_patterns=[],
@@ -197,8 +197,8 @@ class TestIndexRepository:
                 )
 
             doc_gen.generate_batch = mock_generate_batch
-            doc_gen.generate_lld = mock_generate_lld
-            doc_gen.generate_hld = mock_generate_hld
+            doc_gen.generate_component = mock_generate_component
+            doc_gen.generate_architecture = mock_generate_architecture
 
             # Mock EmbeddingService
             embed_svc = MagicMock(spec=EmbeddingService)
@@ -262,20 +262,20 @@ class TestIndexRepository:
                     for n in nodes
                 ]
 
-            async def mock_generate_lld(node, desc, callees=None):
-                return LLDDocument(
+            async def mock_generate_component(node, desc, callees=None):
+                return ComponentDoc(
                     component_id=node.id,
                     algorithm_description="algo",
                     data_flow="",
                     error_handling="",
                 )
 
-            async def mock_generate_hld(module_nodes, descs):
-                return HLDDocument(module_path=".", architectural_role="util")
+            async def mock_generate_architecture(module_nodes, descs):
+                return ArchitectureDoc(module_path=".", architectural_role="util")
 
             doc_gen.generate_batch = mock_generate_batch
-            doc_gen.generate_lld = mock_generate_lld
-            doc_gen.generate_hld = mock_generate_hld
+            doc_gen.generate_component = mock_generate_component
+            doc_gen.generate_architecture = mock_generate_architecture
 
             embed_svc = MagicMock(spec=EmbeddingService)
             embed_svc.build_embedding_text = lambda n: n.name
@@ -340,20 +340,20 @@ class TestIndexRepository:
                     for n in nodes
                 ]
 
-            async def mock_generate_lld(node, desc, callees=None):
-                return LLDDocument(
+            async def mock_generate_component(node, desc, callees=None):
+                return ComponentDoc(
                     component_id=node.id,
                     algorithm_description="algo",
                     data_flow="",
                     error_handling="",
                 )
 
-            async def mock_generate_hld(module_nodes, descs):
-                return HLDDocument(module_path=".", architectural_role="util")
+            async def mock_generate_architecture(module_nodes, descs):
+                return ArchitectureDoc(module_path=".", architectural_role="util")
 
             doc_gen.generate_batch = mock_generate_batch
-            doc_gen.generate_lld = mock_generate_lld
-            doc_gen.generate_hld = mock_generate_hld
+            doc_gen.generate_component = mock_generate_component
+            doc_gen.generate_architecture = mock_generate_architecture
 
             embed_svc = MagicMock(spec=EmbeddingService)
             embed_svc.build_embedding_text = lambda n: n.name

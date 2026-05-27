@@ -1,6 +1,6 @@
 """Documentation generator using LLM via OpenRouter API.
 
-Generates ComponentDescription, LLDDocument, and HLDDocument from AST
+Generates ComponentDescription, ComponentDoc, and ArchitectureDoc from AST
 nodes by prompting an LLM and parsing structured JSON responses.
 """
 
@@ -16,9 +16,9 @@ import httpx
 
 from xce.models import (
     ASTNode,
+    ArchitectureDoc,
     ComponentDescription,
-    HLDDocument,
-    LLDDocument,
+    ComponentDoc,
 )
 
 logger = logging.getLogger(__name__)
@@ -166,14 +166,14 @@ class DocGenerator:
         )
 
     # ------------------------------------------------------------------
-    # 4.4  generate_lld
+    # 4.4  generate_component
     # ------------------------------------------------------------------
 
     @staticmethod
-    def _build_lld_prompt(
+    def _build_component_doc_prompt(
         node: ASTNode, desc: ComponentDescription, callees: list[ASTNode],
     ) -> list[dict[str, str]]:
-        """Build the prompt messages for LLD generation."""
+        """Build the prompt messages for component document generation."""
         callee_text = ""
         if callees:
             snippets = [f"- `{c.name}` ({c.kind.value}): {c.docstring or c.source_text[:150]}"
@@ -193,7 +193,7 @@ class DocGenerator:
             {
                 "role": "user",
                 "content": (
-                    f"Generate a low-level design document for `{node.name}`.\n\n"
+                    f"Generate a component-level design document for `{node.name}`.\n\n"
                     f"Component summary: {desc.summary}\n\n"
                     f"Source code:\n```python\n{node.source_text}\n```"
                     f"{callee_text}"
@@ -201,26 +201,26 @@ class DocGenerator:
             },
         ]
 
-    async def generate_lld(
+    async def generate_component(
         self, node: ASTNode, desc: ComponentDescription, callees: list[ASTNode] | None = None,
-    ) -> LLDDocument:
-        """Generate a low-level design document for a function/method.
+    ) -> ComponentDoc:
+        """Generate a component-level design document for a function/method.
 
-        On LLM failure, returns an LLD with ``algorithm_description="doc_pending"``.
+        On LLM failure, returns a ComponentDoc with ``algorithm_description="doc_pending"``.
         """
-        messages = self._build_lld_prompt(node, desc, callees or [])
+        messages = self._build_component_doc_prompt(node, desc, callees or [])
         result = await self._llm_call(messages)
 
         if result is None:
-            logger.warning("Marking LLD for %s as doc_pending", node.id)
-            return LLDDocument(
+            logger.warning("Marking ComponentDoc for %s as doc_pending", node.id)
+            return ComponentDoc(
                 component_id=node.id,
                 algorithm_description="doc_pending",
                 data_flow="",
                 error_handling="",
             )
 
-        return LLDDocument(
+        return ComponentDoc(
             component_id=node.id,
             algorithm_description=result.get("algorithm_description", ""),
             data_flow=result.get("data_flow", ""),
@@ -229,14 +229,14 @@ class DocGenerator:
         )
 
     # ------------------------------------------------------------------
-    # 4.5  generate_hld
+    # 4.5  generate_architecture
     # ------------------------------------------------------------------
 
     @staticmethod
-    def _build_hld_prompt(
+    def _build_architecture_prompt(
         module_nodes: list[ASTNode], descs: list[ComponentDescription],
     ) -> list[dict[str, str]]:
-        """Build the prompt messages for HLD generation."""
+        """Build the prompt messages for architecture document generation."""
         desc_map = {d.node_id: d for d in descs}
         items: list[str] = []
         for n in module_nodes[:20]:
@@ -259,34 +259,34 @@ class DocGenerator:
             {
                 "role": "user",
                 "content": (
-                    f"Generate a high-level design document for the module at `{module_path}`.\n\n"
+                    f"Generate an architecture document for the module at `{module_path}`.\n\n"
                     f"Components in this module:\n" + "\n".join(items)
                 ),
             },
         ]
 
-    async def generate_hld(
+    async def generate_architecture(
         self, module_nodes: list[ASTNode], descs: list[ComponentDescription],
-    ) -> HLDDocument:
-        """Generate a high-level design document for a module/package.
+    ) -> ArchitectureDoc:
+        """Generate an architecture document for a module/package.
 
-        On LLM failure, returns an HLD with ``architectural_role="doc_pending"``.
+        On LLM failure, returns an ArchitectureDoc with ``architectural_role="doc_pending"``.
         """
         if not module_nodes:
-            return HLDDocument(module_path="", architectural_role="doc_pending")
+            return ArchitectureDoc(module_path="", architectural_role="doc_pending")
 
         module_path = module_nodes[0].filepath.rsplit("/", 1)[0] if "/" in module_nodes[0].filepath else "."
-        messages = self._build_hld_prompt(module_nodes, descs)
+        messages = self._build_architecture_prompt(module_nodes, descs)
         result = await self._llm_call(messages)
 
         if result is None:
-            logger.warning("Marking HLD for %s as doc_pending", module_path)
-            return HLDDocument(
+            logger.warning("Marking ArchitectureDoc for %s as doc_pending", module_path)
+            return ArchitectureDoc(
                 module_path=module_path,
                 architectural_role="doc_pending",
             )
 
-        return HLDDocument(
+        return ArchitectureDoc(
             module_path=module_path,
             architectural_role=result.get("architectural_role", ""),
             design_patterns=result.get("design_patterns", []),

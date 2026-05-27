@@ -174,7 +174,7 @@ class GraphStore:
     ) -> int:
         """Attach documentation nodes to their AST nodes.
 
-        Accepts ``ComponentDescription``, ``LLDDocument``, or ``HLDDocument``
+        Accepts ``ComponentDescription``, ``ComponentDoc``, or ``ArchitectureDoc``
         objects (duck-typed by attribute inspection).
         """
         if not docs:
@@ -204,10 +204,10 @@ class GraphStore:
                     count += record["cnt"] if record else 0
 
                 elif hasattr(doc, "algorithm_description"):
-                    # LLDDocument
+                    # ComponentDoc
                     cypher = (
                         "MATCH (d:ComponentDesc {node_id: $component_id}) "
-                        "MERGE (l:LLDDoc {component_id: $component_id}) "
+                        "MERGE (l:ComponentDoc {component_id: $component_id}) "
                         "SET l.algorithm_description = $algo, "
                         "    l.data_flow = $data_flow, "
                         "    l.error_handling = $error_handling, "
@@ -226,9 +226,9 @@ class GraphStore:
                     count += record["cnt"] if record else 0
 
                 elif hasattr(doc, "architectural_role"):
-                    # HLDDocument
+                    # ArchitectureDoc
                     cypher = (
-                        "MERGE (h:HLDDoc {module_path: $module_path}) "
+                        "MERGE (h:ArchitectureDoc {module_path: $module_path}) "
                         "SET h.architectural_role = $role, "
                         "    h.design_patterns = $patterns, "
                         "    h.integration_points = $integrations, "
@@ -236,7 +236,7 @@ class GraphStore:
                         "WITH h "
                         "MATCH (a:ASTNode) "
                         "WHERE a.filepath STARTS WITH $module_path "
-                        "MERGE (a)-[:PART_OF_HLD]->(h) "
+                        "MERGE (a)-[:PART_OF_ARCHITECTURE]->(h) "
                         "RETURN count(h) AS cnt"
                     )
                     result = await session.run(cypher, {

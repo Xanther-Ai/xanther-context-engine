@@ -82,8 +82,8 @@ class ComponentDescription:
 
 
 @dataclass
-class LLDDocument:
-    """Low-level design document for a function or method."""
+class ComponentDoc:
+    """Component-level design document for a function or method."""
 
     component_id: str
     algorithm_description: str
@@ -93,8 +93,8 @@ class LLDDocument:
 
 
 @dataclass
-class HLDDocument:
-    """High-level design document for a module/package."""
+class ArchitectureDoc:
+    """Architecture-level design document for a module/package."""
 
     module_path: str
     architectural_role: str  # e.g. "controller", "service", "model", "utility"
