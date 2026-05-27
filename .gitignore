@@ -1,6 +1,7 @@
 # Environment variables
 .env
 .env.*
+!.env.example
 
 # Python
 __pycache__/
@@ -19,6 +20,7 @@ env/
 # IDE
 .idea/
 .vscode/
+.kiro/
 *.swp
 *.swo
 
@@ -31,63 +33,18 @@ neo4j_data/
 
 # Node
 node_modules/
-website/node_modules/
-website/.next/
-website/out/
-dashboard/.next/
-xanther-website/.next/
-xanther-website/out/
 
-# CDK
-infra/cdk.out/
-infra/node_modules/
-
-# Private infrastructure & deployment (separate repo)
-infra/
-scripts/
-deploy/
-lambda/
-services/
-dashboard/
-xanther-website/
-tools/
-packages/
-.kiro/specs/xce-saas-platform/
-.kiro/specs/session-memory-sync/
-.kiro/specs/xanther-website/
-.kiro/specs/xce-competitive-demo/
-.kiro/specs/yc-application-prep/
-.kiro/hooks/
-docs/yc-application/
-docs/marketing/
-swe_results/
-
-# Hypothesis
+# Test artifacts
 .hypothesis/
-
-# Ruff cache
+.pytest_cache/
 .ruff_cache/
 
-# Pytest cache
-.pytest_cache/
-
-# Wrangler
-.wrangler/
-
-# Temp analysis
+# Temp
 /tmp/
-
-# Lambda layer (large, built separately)
-infra/lambda/layer/
 
 # Xanther CLI config (contains API key)
 .xanther/
 
-# Session logs (contain sensitive data)
-tools/kiro-remote/session.jsonl
-
-# Kiro settings (contains tokens)
-.kiro/settings/
-
-# CDK context (contains account info)
-infra/cdk.context.json
+# Internal tools (not part of open source)
+tools/
+scripts/
