@@ -15,7 +15,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import httpx
 import pytest
 
-from xce.doc_generator import DocGenerator, MAX_RETRIES, BASE_DELAY_S
+from xce.indexing.doc_generator import DocGenerator, MAX_RETRIES, BASE_DELAY_S
 from xce.models import ASTNode, ComponentDescription, HLDDocument, LLDDocument, NodeKind
 
 
@@ -340,7 +340,7 @@ class TestRetryBehavior:
         gen._client.post = mock_post  # type: ignore[assignment]
 
         # Patch sleep to avoid actual delays
-        with patch("xce.doc_generator.asyncio.sleep", new_callable=AsyncMock):
+        with patch("xce.indexing.doc_generator.asyncio.sleep", new_callable=AsyncMock):
             desc = await gen.generate_component_desc(node)
 
         assert desc.summary == "Success after retry"
@@ -366,7 +366,7 @@ class TestRetryBehavior:
 
         gen._client.post = mock_post  # type: ignore[assignment]
 
-        with patch("xce.doc_generator.asyncio.sleep", new_callable=AsyncMock):
+        with patch("xce.indexing.doc_generator.asyncio.sleep", new_callable=AsyncMock):
             desc = await gen.generate_component_desc(node)
 
         assert desc.summary == "Recovered"
@@ -381,7 +381,7 @@ class TestRetryBehavior:
 
         gen._client.post = mock_post  # type: ignore[assignment]
 
-        with patch("xce.doc_generator.asyncio.sleep", new_callable=AsyncMock):
+        with patch("xce.indexing.doc_generator.asyncio.sleep", new_callable=AsyncMock):
             desc = await gen.generate_component_desc(node)
 
         assert desc.summary == "doc_pending"
@@ -397,7 +397,7 @@ class TestRetryBehavior:
 
         gen._client.post = mock_post  # type: ignore[assignment]
 
-        with patch("xce.doc_generator.asyncio.sleep", new_callable=AsyncMock):
+        with patch("xce.indexing.doc_generator.asyncio.sleep", new_callable=AsyncMock):
             results = await gen.generate_batch(nodes)
 
         assert all(d.summary == "doc_pending" for d in results)
@@ -413,7 +413,7 @@ class TestRetryBehavior:
 
         gen._client.post = mock_post  # type: ignore[assignment]
 
-        with patch("xce.doc_generator.asyncio.sleep", new_callable=AsyncMock):
+        with patch("xce.indexing.doc_generator.asyncio.sleep", new_callable=AsyncMock):
             lld = await gen.generate_lld(node, desc)
 
         assert lld.algorithm_description == "doc_pending"
@@ -428,7 +428,7 @@ class TestRetryBehavior:
 
         gen._client.post = mock_post  # type: ignore[assignment]
 
-        with patch("xce.doc_generator.asyncio.sleep", new_callable=AsyncMock):
+        with patch("xce.indexing.doc_generator.asyncio.sleep", new_callable=AsyncMock):
             hld = await gen.generate_hld(nodes, [])
 
         assert hld.architectural_role == "doc_pending"

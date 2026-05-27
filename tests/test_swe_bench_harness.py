@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import pytest
 
-from xce.swe_bench_harness import (
+from benchmarks.swe_bench_harness import (
     BASELINES,
     EvalResult,
     SWEBenchInstance,

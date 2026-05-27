@@ -1,4 +1,4 @@
-"""Unit tests for xce.graph_store.GraphStore.
+"""Unit tests for xce.graph.store.GraphStore.
 
 Since we cannot run a real Neo4j instance in unit tests, we mock the
 neo4j async driver and verify Cypher query construction, parameter
@@ -19,7 +19,7 @@ import pytest
 from hypothesis import given, settings
 from hypothesis import strategies as st
 
-from xce.graph_store import GraphStore, _RELATION_MAP, _build_schema_constraints
+from xce.graph.store import GraphStore, _RELATION_MAP, _build_schema_constraints
 from xce.models import ASTEdge, ASTNode, GraphQuery, NodeKind, SearchResult
 
 
@@ -147,7 +147,7 @@ class TestSchemaConstraints:
     @pytest.mark.asyncio
     async def test_init_schema_runs_all_statements(self):
         driver, session = _mock_driver()
-        with patch("xce.graph_store.AsyncGraphDatabase.driver", return_value=driver):
+        with patch("xce.graph.store.AsyncGraphDatabase.driver", return_value=driver):
             store = GraphStore.__new__(GraphStore)
             store._driver = driver
             store._embedding_dimensions = 512
@@ -745,7 +745,7 @@ class TestPropertyIdempotentUpsert:
 
 class TestGraphStoreInit:
     def test_init_creates_driver(self):
-        with patch("xce.graph_store.AsyncGraphDatabase.driver") as mock_driver_fn:
+        with patch("xce.graph.store.AsyncGraphDatabase.driver") as mock_driver_fn:
             mock_driver_fn.return_value = MagicMock()
             store = GraphStore(
                 neo4j_uri="bolt://localhost:7687",
@@ -757,7 +757,7 @@ class TestGraphStoreInit:
             )
 
     def test_init_custom_dimensions(self):
-        with patch("xce.graph_store.AsyncGraphDatabase.driver") as mock_driver_fn:
+        with patch("xce.graph.store.AsyncGraphDatabase.driver") as mock_driver_fn:
             mock_driver_fn.return_value = MagicMock()
             store = GraphStore(
                 neo4j_uri="bolt://localhost:7687",

@@ -15,7 +15,7 @@ from unittest.mock import AsyncMock
 import pytest
 
 from xce.models import ChainStep, ReasoningChain, TraversalResult
-from xce.reasoning_chain import ReasoningChainBuilder
+from xce.query.reasoning import ReasoningChainBuilder
 
 
 def _make_traversal_result(node_ids: list[str]) -> TraversalResult:

@@ -39,8 +39,8 @@ def setup_logging(level: str = "INFO") -> None:
 async def cmd_index(args: argparse.Namespace) -> None:
     """Index a repository into the knowledge graph."""
     from xce.config import get_settings
-    from xce.graph_store import GraphStore
-    from xce.indexer import Indexer
+    from xce.graph.store import GraphStore
+    from xce.indexing.indexer import Indexer
 
     settings = get_settings()
     repo_path = Path(args.repo_path).resolve()
@@ -80,7 +80,7 @@ async def cmd_index(args: argparse.Namespace) -> None:
 
 async def cmd_serve(args: argparse.Namespace) -> None:
     """Start the MCP server."""
-    from xce.mcp_server import XCEMCPServer
+    from xce.server.mcp_server import XCEMCPServer
 
     server = XCEMCPServer()
 
@@ -100,7 +100,7 @@ async def cmd_serve(args: argparse.Namespace) -> None:
 async def cmd_status(args: argparse.Namespace) -> None:
     """Show status of indexed repositories."""
     from xce.config import get_settings
-    from xce.graph_store import GraphStore
+    from xce.graph.store import GraphStore
 
     settings = get_settings()
     graph_store = GraphStore(

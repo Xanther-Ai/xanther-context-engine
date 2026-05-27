@@ -15,7 +15,7 @@ from unittest.mock import AsyncMock
 import pytest
 
 from xce.models import RefinementState, SummarizedContext, TestResult
-from xce.refinement_loop import RefinementLoop
+from xce.query.refinement import RefinementLoop
 
 
 def _make_context() -> SummarizedContext:

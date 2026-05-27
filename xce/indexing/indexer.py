@@ -14,9 +14,9 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from xce.doc_generator import DocGenerator
-from xce.embedding_service import EmbeddingService
-from xce.graph_store import GraphStore
+from xce.indexing.doc_generator import DocGenerator
+from xce.indexing.embedding import EmbeddingService
+from xce.graph.store import GraphStore
 from xce.models import ASTNode, NodeKind
 from xce.parsers import ParserRegistry, get_default_registry
 

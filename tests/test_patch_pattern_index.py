@@ -15,8 +15,8 @@ from unittest.mock import AsyncMock
 import pytest
 
 from xce.models import PatchPattern
-from xce.patch_pattern_index import PatchPatternIndex, _cosine_similarity
-from xce.swe_bench_harness import SWEBenchInstance
+from benchmarks.patch_pattern_index import PatchPatternIndex, _cosine_similarity
+from benchmarks.swe_bench_harness import SWEBenchInstance
 
 
 def _make_instance(

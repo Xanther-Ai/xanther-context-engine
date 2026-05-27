@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import pytest
 
-from xce.test_patch_analyzer import TestPatchAnalyzer
+from benchmarks.test_patch_analyzer import TestPatchAnalyzer
 
 SAMPLE_PATCH = """\
 diff --git a/tests/test_queryset.py b/tests/test_queryset.py

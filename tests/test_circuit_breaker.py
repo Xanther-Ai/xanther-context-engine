@@ -13,7 +13,7 @@ import time
 
 import pytest
 
-from xce.circuit_breaker import (
+from xce.utils.circuit_breaker import (
     CircuitBreaker,
     CircuitBreakerOpenError,
     CircuitState,

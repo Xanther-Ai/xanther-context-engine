@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import pytest
 
-from xce.complexity_router import ComplexityRouter
+from xce.utils.complexity_router import ComplexityRouter
 from xce.models import ProblemComplexity, RoutingDecision, TestPatchSignal
 
 

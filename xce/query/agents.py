@@ -15,7 +15,7 @@ from typing import Any
 
 from langgraph.graph import END, StateGraph
 
-from xce.graph_store import GraphStore
+from xce.graph.store import GraphStore
 from xce.models import GraphQuery, TraversalResult, TraversalState
 
 logger = logging.getLogger(__name__)

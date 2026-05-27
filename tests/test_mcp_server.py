@@ -14,7 +14,7 @@ import pytest
 from hypothesis import given, settings
 from hypothesis import strategies as st
 
-from xce.mcp_server import (
+from xce.server.mcp_server import (
     TOOLS,
     ValidationError,
     XCEMCPServer,

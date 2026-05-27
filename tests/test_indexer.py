@@ -16,9 +16,9 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from xce.doc_generator import DocGenerator
-from xce.embedding_service import EmbeddingService
-from xce.indexer import (
+from xce.indexing.doc_generator import DocGenerator
+from xce.indexing.embedding import EmbeddingService
+from xce.indexing.indexer import (
     IndexResult,
     _compute_file_hash,
     _detect_changed_files,

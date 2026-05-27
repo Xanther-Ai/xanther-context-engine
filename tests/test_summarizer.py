@@ -14,7 +14,7 @@ from hypothesis import given, settings
 from hypothesis import strategies as st
 
 from xce.models import SummarizationRequest, SummarizedContext, TraversalResult
-from xce.summarizer import RESERVED_FOR_SUMMARY, ContextSummarizer
+from xce.indexing.summarizer import RESERVED_FOR_SUMMARY, ContextSummarizer
 
 
 # ---------------------------------------------------------------------------

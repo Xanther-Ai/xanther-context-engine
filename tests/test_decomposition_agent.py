@@ -16,7 +16,7 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from xce.decomposition_agent import ProblemDecompositionAgent, _VALID_AGENTS
+from xce.query.decomposition import ProblemDecompositionAgent, _VALID_AGENTS
 from xce.models import (
     DecompositionResult,
     SubTask,

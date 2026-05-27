@@ -14,7 +14,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from xce.embedding_service import EmbeddingService, MAX_RETRIES
+from xce.indexing.embedding import EmbeddingService, MAX_RETRIES
 from xce.models import ASTNode, NodeKind
 
 
@@ -217,7 +217,7 @@ class TestEncodeBatch:
         )
         svc._client.embeddings.create = AsyncMock(return_value=mock_response)
 
-        with patch("xce.embedding_service.asyncio.sleep", new_callable=AsyncMock):
+        with patch("xce.indexing.embedding.asyncio.sleep", new_callable=AsyncMock):
             with pytest.raises(ValueError, match="dimensions"):
                 await svc.encode_batch(["text1"], batch_size=10)
 
@@ -245,7 +245,7 @@ class TestRetryBehavior:
 
         svc._client.embeddings.create = mock_create  # type: ignore[assignment]
 
-        with patch("xce.embedding_service.asyncio.sleep", new_callable=AsyncMock):
+        with patch("xce.indexing.embedding.asyncio.sleep", new_callable=AsyncMock):
             results = await svc.encode_batch(["hello"], batch_size=10)
 
         assert len(results) == 1
@@ -257,6 +257,6 @@ class TestRetryBehavior:
 
         svc._client.embeddings.create = AsyncMock(side_effect=Exception("always fails"))
 
-        with patch("xce.embedding_service.asyncio.sleep", new_callable=AsyncMock):
+        with patch("xce.indexing.embedding.asyncio.sleep", new_callable=AsyncMock):
             with pytest.raises(Exception, match="always fails"):
                 await svc.encode_batch(["hello"], batch_size=10)
