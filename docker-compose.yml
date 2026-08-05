@@ -1,4 +1,27 @@
 services:
+  # PostgreSQL - Stores file hashes for incremental indexing
+  postgres:
+    image: postgres:16-alpine
+    container_name: xce-postgres
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-xce}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-xce_dev_password}
+      POSTGRES_DB: ${POSTGRES_DB:-xce_index}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./scripts/init-postgres.sql:/docker-entrypoint-initdb.d/init.sql
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-xce} -d ${POSTGRES_DB:-xce_index}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - xce-network
+
+  # Neo4j - Graph database for AST nodes and relationships
   neo4j:
     image: neo4j:5-community
     container_name: xce-neo4j
@@ -19,27 +42,61 @@ services:
       timeout: 5s
       retries: 5
       start_period: 30s
+    networks:
+      - xce-network
+    depends_on:
+      postgres:
+        condition: service_healthy
 
-  xce:
-    build: .
-    container_name: xce-app
+  # XCE Dashboard & MCP Server
+  xce-dashboard:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: xce-dashboard
     ports:
-      - "8000:8000"
+      - "8080:8080"   # Dashboard UI
+      - "8000:8000"   # MCP Server
     environment:
+      # PostgreSQL - for incremental indexing hashes
+      POSTGRES_URI: postgresql://${POSTGRES_USER:-xce}:${POSTGRES_PASSWORD:-xce_dev_password}@postgres:5432/${POSTGRES_DB:-xce_index}
+      POSTGRES_USER: ${POSTGRES_USER:-xce}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-xce_dev_password}
+      POSTGRES_DB: ${POSTGRES_DB:-xce_index}
+      # Neo4j - Graph database
       NEO4J_URI: bolt://neo4j:7687
       NEO4J_USER: neo4j
       NEO4J_PASSWORD: ${NEO4J_PASSWORD:-xce_dev_password}
-      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
-      KIMI_API_KEY: ${KIMI_API_KEY:-}
-      EMBEDDING_MODEL: ${EMBEDDING_MODEL:-openai/text-embedding-3-small}
-      EMBEDDING_DIMENSIONS: ${EMBEDDING_DIMENSIONS:-512}
+      # AWS for embeddings
+      AWS_REGION: ${AWS_REGION:-us-east-1}
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:-}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:-}
+      # Embedding config
+      EMBEDDING_MODEL: ${EMBEDDING_MODEL:-amazon.titan-embed-text-v1}
+      EMBEDDING_DIMENSIONS: ${EMBEDDING_DIMENSIONS:-1536}
+      # Application
+      DB_BACKEND: neo4j
+      XCE_USE_LOCAL: "true"
     depends_on:
       neo4j:
         condition: service_healthy
+      postgres:
+        condition: service_healthy
     restart: unless-stopped
+    networks:
+      - xce-network
+    volumes:
+      - ./xce:/app/xce
+      - ./static:/app/static
 
 volumes:
+  postgres_data:
+    driver: local
   neo4j_data:
     driver: local
   neo4j_logs:
     driver: local
+
+networks:
+  xce-network:
+    driver: bridge

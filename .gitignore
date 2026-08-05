@@ -1,9 +1,13 @@
-# Environment variables
+# ──────────────────────────────────────────────
+# Environment & secrets
+# ──────────────────────────────────────────────
 .env
 .env.*
 !.env.example
 
+# ──────────────────────────────────────────────
 # Python
+# ──────────────────────────────────────────────
 __pycache__/
 *.py[cod]
 *$py.class
@@ -11,40 +15,106 @@ __pycache__/
 dist/
 build/
 .eggs/
+*.so
 
+# ──────────────────────────────────────────────
 # Virtual environments
+# ──────────────────────────────────────────────
 .venv/
 venv/
 env/
 
-# IDE
+# ──────────────────────────────────────────────
+# IDE & editor
+# ──────────────────────────────────────────────
 .idea/
 .vscode/
 .kiro/
 *.swp
 *.swo
+*.orig
 
+# ──────────────────────────────────────────────
 # OS
+# ──────────────────────────────────────────────
 .DS_Store
 Thumbs.db
 
-# Neo4j data
-neo4j_data/
-
-# Node
-node_modules/
-
-# Test artifacts
+# ──────────────────────────────────────────────
+# Test & coverage artifacts
+# ──────────────────────────────────────────────
 .hypothesis/
 .pytest_cache/
 .ruff_cache/
+.mypy_cache/
+htmlcov/
+.coverage
+coverage.xml
 
-# Temp
-/tmp/
+# ──────────────────────────────────────────────
+# Infrastructure binaries (local dev only — use Docker instead)
+# ──────────────────────────────────────────────
+neo4j-community-*/
+jdk-*/
+jdk*.tar.gz
+*.tar.gz
+*.zip
 
-# Xanther CLI config (contains API key)
+# ──────────────────────────────────────────────
+# Sub-repos / sibling projects (live in their own repos)
+# ──────────────────────────────────────────────
+django-repo/
+reference-xce/
+xanther-cli/
+xanther-website/
+
+# ──────────────────────────────────────────────
+# Xanther runtime state (generated, not source)
+# ──────────────────────────────────────────────
 .xanther/
+xanther-out/
 
-# Internal tools (not part of open source)
+# ──────────────────────────────────────────────
+# Ad-hoc / session / status files (not source)
+# ──────────────────────────────────────────────
+RESTART_*.md
+RESTART_*.txt
+*_STATUS*.txt
+*_STATUS*.md
+LIVE_STATUS*.txt
+CHECK_UPDATE*.txt
+INDEXING_STATUS_NOW*.txt
+INDEXING_STATUS_UPDATE*.md
+check_indexing_progress.py
+complete_indexing*.py
+index_django.py
+verify_indexing_layers.py
+test_mcp_*.py
+test_small_index/
+REPO_STRUCTURE.md
+
+# ──────────────────────────────────────────────
+# Sensitive / user data (never commit)
+# ──────────────────────────────────────────────
+cognito_users.json
+*.pem
+*.key
+*.p12
+secrets/
+
+# ──────────────────────────────────────────────
+# Node (website/CLI live in their own repos)
+# ──────────────────────────────────────────────
+node_modules/
+
+# ──────────────────────────────────────────────
+# Internal tools (not for contributors)
+# ──────────────────────────────────────────────
 tools/
-scripts/
+scripts/xce_tools/
+
+# ──────────────────────────────────────────────
+# Misc
+# ──────────────────────────────────────────────
+/tmp/
+static/
