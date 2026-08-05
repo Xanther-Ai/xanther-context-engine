@@ -1,8 +1,8 @@
 <div align="center">
 
-# Xanther
+# Xanther Context Engine (XCE)
 
-**The AI coding assistant memory layer that actually works.**
+**Architecture-aware code intelligence for AI coding assistants.**
 
 [![License: Apache 2.0](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-blue)](https://python.org)
@@ -12,135 +12,132 @@
 
 ---
 
-> Your AI assistant re-reads your entire codebase every session. It forgets every decision you've made. It repeats the same failed approaches. Xanther fixes this.
+> AI assistants read your entire codebase every question. They grep instead of navigate. They miss architectural context that only a graph can provide. XCE fixes this.
 
-Xanther gives AI coding assistants **persistent memory** across sessions — decisions remembered, failures not repeated, context always current. Works with Claude Code, Kiro, Cursor, Codex, and any MCP-compatible tool. No cloud required.
+XCE turns any codebase into a **queryable knowledge graph** — functions, classes, imports, call edges, architecture layers — and serves it to AI agents via MCP. Works with Claude Code, Kiro, Cursor, Codex, and any MCP-compatible tool.
 
 ```bash
-pip install xanther
-xme hook install .          # 30 seconds to set up
-xme start my-project        # memory starts now
+pip install xanther-context-engine
+xce index .                 # build the graph once
+xce serve                   # start MCP server
+```
+
+One command. Your agent now navigates by structure instead of grepping through files.
+
+---
+
+## Architecture
+
+```mermaid
+graph TB
+    subgraph "Your Codebase"
+        SRC[Source Files<br/>Python · TS · Go · Rust · Java · 10+ more]
+        DOCS[Docs & Configs<br/>Markdown · OpenAPI · SQL]
+    end
+
+    subgraph "XCE Indexing Pipeline"
+        direction LR
+        L1[Layer 1<br/>AST Parsing<br/>tree-sitter]
+        L2[Layer 2<br/>Component Descriptions<br/>LLM summaries]
+        L3[Layer 3<br/>Component Docs<br/>Algorithm + data flow]
+        L4[Layer 4<br/>Architecture Docs<br/>Module roles + patterns]
+        L1 --> L2 --> L3 --> L4
+    end
+
+    subgraph "Knowledge Graph"
+        NEO4J[(Neo4j<br/>ASTNodes · Edges<br/>ComponentDesc · ArchitectureDoc<br/>Vector Embeddings)]
+    end
+
+    subgraph "Serving Layer"
+        MCP[MCP Server<br/>stdio · SSE]
+        TOOLS[5 Tools<br/>architecture_context<br/>search · trace<br/>impact_analysis · index]
+    end
+
+    subgraph "AI Agents"
+        CC[Claude Code]
+        KIRO[Kiro]
+        CURSOR[Cursor]
+        CODEX[Codex]
+    end
+
+    SRC --> L1
+    DOCS --> L1
+    L4 --> NEO4J
+    NEO4J --> MCP
+    MCP --> TOOLS
+    TOOLS --> CC & KIRO & CURSOR & CODEX
 ```
 
 ---
 
-## What Xanther does
+## Local Infrastructure
 
-Graphify maps what your code *is*. Xanther remembers what your team *did*.
+```mermaid
+graph LR
+    subgraph "Your Machine"
+        subgraph "Docker Compose"
+            N[(Neo4j:7687<br/>Graph + Vectors)]
+            PG[(PostgreSQL:5432<br/>Incremental hashes)]
+        end
 
-Every session, Xanther captures what was discussed, extracts decisions and lessons learned, and makes them available at the start of the next session — without you having to re-explain anything.
+        subgraph "XCE Process"
+            IDX[xce index<br/>Parsing + LLM enrichment]
+            SRV[xce serve<br/>MCP server stdio/SSE]
+        end
 
-```
-Session 1:  "We decided to use FastAPI. Redis lock failed — timeout under load."
-Session 2:  Agent already knows. Doesn't suggest Redis. Doesn't re-explain FastAPI.
-Session 10: Full institutional memory. New team members onboard in minutes.
+        subgraph "IDE"
+            MCP_CFG[mcp.json<br/>xce-mcp-server]
+            AGENT[AI Agent]
+        end
+    end
+
+    subgraph "External APIs (optional)"
+        OR[OpenRouter API<br/>Embeddings + Doc generation]
+    end
+
+    IDX -- write nodes/edges --> N
+    IDX -- write file hashes --> PG
+    IDX -- incremental hash check --> PG
+    SRV -- read graph --> N
+    MCP_CFG -- spawn --> SRV
+    AGENT -- MCP tool calls --> SRV
+    IDX -. LLM calls .-> OR
 ```
 
 ---
 
-## Three memory layers
+## Four indexing layers
 
-```
-┌─────────────────┐   ┌──────────────────┐   ┌──────────────────────┐
-│  EPISODIC        │   │  FACTS (Graph)    │   │  WORKING CONTEXT      │
-│                  │   │                   │   │                       │
-│  Full session    │   │  Decisions        │   │  Current task         │
-│  transcripts     │   │  Attempts         │   │  Recent decisions     │
-│  verbatim        │   │  Preferences      │   │  Next steps           │
-│                  │   │  Conventions      │   │  Open questions       │
-│  OpenSearch      │   │  Entities         │   │                       │
-│  + SQLite FTS5   │   │  Neo4j            │   │  SQLite UPSERT        │
-│  (fallback)      │   │  + vector dedup   │   │  per (project, user)  │
-└─────────────────┘   └──────────────────┘   └──────────────────────┘
-```
+XCE enriches your code graph in four sequential layers:
 
-**Episodic** — raw session transcripts, full-text searchable. "What did we try last Tuesday?"
+| Layer | What it produces | LLM? |
+|-------|-----------------|------|
+| 1 — AST Parsing | Functions, classes, imports, call edges | No |
+| 2 — Component Descriptions | 1-2 sentence summary per symbol | Yes |
+| 3 — Component Docs | Algorithm, data flow, error handling | Yes |
+| 4 — Architecture Docs | Module roles, design patterns, integration points | Yes |
 
-**Facts** — structured knowledge extracted from sessions. Decisions, failed approaches, preferences, conventions. Vector-deduplicated so the same fact never gets stored twice. Graph-linked so related facts surface together.
-
-**Working Context** — the current state of a `(project, user)` pair. Always up-to-date via UPSERT. Injected into agent context at session start.
+Layer 1 is always free — just tree-sitter. Layers 2-4 use your LLM API key (optional, enable with `--smart-docs` to reduce cost ~80%).
 
 ---
 
 ## Quickstart
 
-**Install:**
 ```bash
-pip install xanther
+pip install xanther-context-engine
+cp .env.example .env        # add NEO4J_PASSWORD + OPENROUTER_API_KEY
+docker-compose up -d        # start Neo4j + PostgreSQL
+
+xce index . --repo-id my-project --smart-docs
+xce serve                   # MCP server on stdio
 ```
 
-**Install hooks** (Kiro + Claude Code):
-```bash
-xme hook install .
-```
+Add to your MCP config (`~/.kiro/settings/mcp.json` or `~/.claude/settings.json`):
 
-That's it. XME now auto-captures every session. No other setup needed.
-
-**Start a session manually:**
-```bash
-xme start my-project
-```
-
-**Search your memory:**
-```bash
-xme search my-project "why did we choose FastAPI"
-xme facts my-project --type decision
-```
-
-**Launch the dashboard:**
-```bash
-xme dashboard
-# Open http://localhost:8001
-```
-
----
-
-## How it works
-
-**During a session**, two hooks fire silently:
-- `promptSubmit` — buffers your message to `.xanther/turns/`
-- `agentStop` — drains the buffer: extracts facts, updates context, saves episode
-
-**At the start of the next session**, the agent gets a context block like:
-
-```markdown
-**Current task**: Refactor auth module
-**Last session**: Moved JWT logic to dedicated auth service — success
-**Recent decisions**:
-- [VALIDATED] Use FastAPI for auth service — async support required
-- [VALIDATED] PostgreSQL for main DB — ACID compliance
-**Known failed approaches**:
-- Redis distributed lock — timeout under load >1000 req/s
-**Next steps**: Deploy auth service to staging
-```
-
-The agent starts informed. No re-explaining. No repeated mistakes.
-
----
-
-## MCP tools
-
-Xanther exposes 11 memory tools via MCP, working alongside 5 code intelligence tools:
-
-| Tool | What it does |
-|------|-------------|
-| `xme_session_start` | Start session, get primed context for prompt injection |
-| `xme_session_end` | End session: persist episode, extract facts, update context |
-| `xme_add` | Add content to memory — Mem0-style UPSERT with deduplication |
-| `xme_search` | Search across all 3 layers simultaneously |
-| `xme_get_context` | Get current working context for a project+user |
-| `xme_facts` | Query the fact graph — decisions, attempts, preferences |
-| `xme_episodes` | Search past sessions |
-| `xme_remember` | Explicitly store a typed fact |
-| `xme_forget` | Soft-delete a memory node |
-| `xme_export` | Export to Obsidian vault, wiki, or Graphify-compatible JSON |
-| `xme_context_update` | Partial UPSERT of working context fields |
-
-Add to your MCP config:
 ```json
 {
   "mcpServers": {
-    "xanther": {
+    "xce": {
       "command": "xce-mcp-server",
       "env": {
         "NEO4J_URI": "bolt://localhost:7687",
@@ -153,184 +150,131 @@ Add to your MCP config:
 
 ---
 
-## Deduplication
+## MCP tools (5)
 
-Facts are stored once, not repeated. When you add new content, Xanther:
+| Tool | Description |
+|------|-------------|
+| `xce_architecture_context` | Full architectural context for a file or symbol |
+| `xce_search` | Semantic + symbol search across the graph |
+| `xce_impact_analysis` | Blast radius — what breaks if you change this? |
+| `xce_trace` | Trace from code to component to architecture |
+| `xce_index_repo` | Trigger incremental re-index |
 
-1. Embeds it using `all-MiniLM-L6-v2` (local, no API key)
-2. Searches for similar existing facts (cosine similarity)
-3. If similarity > 0.85: **merges** the new info into the existing fact
-4. If no match: creates a new fact node
-
-```
-Session 3: "we use FastAPI"        → merges with existing FastAPI decision (sim=0.93)
-Session 7: "decided on FastAPI"    → merges again (sim=0.91)
-Session 15: "PostgreSQL migration" → new fact (sim=0.12 vs FastAPI)
-```
-
-Your fact graph stays clean even across dozens of sessions.
+With [XME installed](https://github.com/Xanther-Ai/xanther-memory-engine), 11 additional memory tools are available automatically.
 
 ---
 
-## Multi-user, multi-project
+## Language support
 
-Every memory operation is scoped to `(project_id, user_id)`:
+14 languages via tree-sitter, with more on the way:
 
-- **Team scope** — decisions, attempts, conventions are shared across users in a project
-- **Personal scope** — sessions, preferences are per-user
-
-```bash
-xme search payments-api "auth decisions"          # search team memory
-xme facts payments-api --type decision            # list team decisions
-xme facts payments-api --type preference --user raj  # personal preferences
-```
-
----
-
-## Export formats
-
-**Obsidian vault:**
-```bash
-xme export my-project --format obsidian
-# → .xanther/obsidian/  (open as Obsidian vault)
-```
-
-**Agent-navigable wiki:**
-```bash
-xme export my-project --format wiki
-# → .xanther/wiki/index.md + article per concept
-```
-
-**Graphify-compatible:**
-```bash
-xme export my-project --format graphify
-# → .xanther/graphify-out/graph.json + GRAPH_REPORT.md
-```
+| Language | Extensions |
+|----------|-----------|
+| Python | `.py` |
+| TypeScript / JavaScript | `.ts` `.tsx` `.js` `.jsx` |
+| Go | `.go` |
+| Rust | `.rs` |
+| Java | `.java` |
+| C# | `.cs` |
+| Kotlin | `.kt` |
+| Ruby | `.rb` |
+| PHP | `.php` |
+| Swift | `.swift` |
+| C / C++ | `.c` `.cpp` `.h` `.hpp` |
 
 ---
 
-## Storage backends
+## Incremental indexing
 
-| Backend | What it stores | Required? |
-|---------|---------------|-----------|
-| SQLite | Context layer + fact fallback + episodic fallback | Always (built-in) |
-| Neo4j | Fact graph with vector search | Recommended |
-| OpenSearch | Episodic full-text + semantic search | Optional |
+XCE uses SHA-256 content hashing (stored in PostgreSQL) to re-index only changed files:
 
-**Zero-infrastructure mode** (SQLite only):
-```bash
-XME_FALLBACK_MODE=true xme start my-project
-```
+```mermaid
+sequenceDiagram
+    participant Dev as Developer
+    participant XCE as xce index
+    participant PG as PostgreSQL
+    participant NEO4J as Neo4j
 
-**Full mode** (Neo4j + OpenSearch via Docker):
-```bash
-docker-compose up -d
-xme start my-project
+    Dev->>XCE: xce index . (second run)
+    XCE->>PG: get stored hashes
+    PG-->>XCE: {file: hash, ...}
+    XCE->>XCE: SHA-256 all files
+    XCE->>XCE: diff — find changed files only
+    XCE->>NEO4J: upsert changed nodes/edges
+    XCE->>PG: update hashes
+    XCE-->>Dev: ✓ 3 files re-indexed (97 skipped)
 ```
 
 ---
 
 ## Comparison
 
-| Feature | Graphify | Mem0 | Zep | **Xanther XME** |
-|---------|----------|------|-----|-----------------|
-| Code knowledge graph | ✅ | ❌ | ❌ | ✅ (via XCE) |
-| Session memory | ❌ | ✅ | ✅ | ✅ |
-| Fact graph | ❌ | partial | ✅ | ✅ |
-| Working context UPSERT | ❌ | ❌ | ❌ | ✅ |
-| Multi-user scoping | ❌ | ✅ | ✅ | ✅ |
-| Deduplication | ❌ | ✅ | ✅ | ✅ |
-| Local-first / self-hosted | ✅ | ❌ | ❌ | ✅ |
-| No pre-indexing required | ✅ | ✅ | ✅ | ✅ |
-| Obsidian export | ✅ | ❌ | ❌ | ✅ |
-| Dashboard UI | graph.html | ❌ | ✅ | ✅ |
-| MCP tools | 1 | ❌ | ❌ | 11 |
-| Open source | ✅ | partial | ❌ | ✅ |
-
----
-
-## Architecture
-
-```
-xme/
-├── engine.py          # MemoryEngine — single entry point
-├── models.py          # Episode, Fact, WorkingContext, Turn
-├── config.py          # XMESettings (env-based)
-├── layers/
-│   ├── episodic.py    # OpenSearch + SQLite FTS5 fallback
-│   ├── facts.py       # Neo4j + vector dedup + SQLite fallback
-│   └── context.py     # SQLite UPSERT per (project, user)
-├── extraction/
-│   ├── embedder.py    # all-MiniLM-L6-v2 (local, no API key)
-│   └── extractor.py   # LLM or regex fact extraction
-├── server/
-│   ├── mcp_tools.py   # 11 MCP tools
-│   └── dashboard.py   # FastAPI dashboard (port 8001)
-├── export/
-│   ├── obsidian.py
-│   ├── wiki.py
-│   └── graphify_compat.py
-└── hooks/
-    ├── installer.py   # xme hook install
-    └── handler.py     # hook entrypoint (zero imports, <20ms)
-```
-
-XCE (Xanther Context Engine) — code graph intelligence — lives alongside XME in the same package. When XCE has indexed your codebase, facts automatically link to the relevant AST nodes, enabling queries like "which decisions affected the auth module?" XME works without XCE.
-
----
-
-## Configuration
-
-All configuration via environment variables:
-
-```bash
-# Storage
-XME_SQLITE_PATH=.xanther/xme.db       # default
-XME_OPENSEARCH_URL=http://localhost:9200
-XME_FALLBACK_MODE=false                # true = SQLite only
-
-# Embedding
-XME_EMBEDDING_MODEL=all-MiniLM-L6-v2  # local model
-XME_DEDUP_THRESHOLD=0.85               # similarity threshold for merging facts
-
-# LLM extraction (optional — better fact quality)
-OPENROUTER_API_KEY=sk-...
-XME_LLM_MODEL=openai/gpt-4o-mini
-
-# Neo4j (shared with XCE)
-NEO4J_URI=bolt://localhost:7687
-NEO4J_PASSWORD=your-password
-```
+| | Graphify | Serena | Sourcegraph | **XCE** |
+|--|---------|--------|-------------|---------|
+| Code graph (AST) | ✅ | ✅ (LSP) | ✅ | ✅ |
+| Architecture docs | ❌ | ❌ | ❌ | ✅ |
+| Component descriptions | ❌ | ❌ | ❌ | ✅ |
+| Semantic search | ❌ | ❌ | ✅ | ✅ |
+| Impact analysis | ❌ | partial | partial | ✅ |
+| Multi-language | ✅ (19) | ✅ (40 via LSP) | ✅ | ✅ (14) |
+| MCP tools | 1 | ✅ | ❌ | ✅ (5) |
+| Local-first | ✅ | ✅ | ❌ | ✅ |
+| Persistent memory | ❌ | ❌ | ❌ | ✅ via XME |
 
 ---
 
 ## CLI reference
 
 ```bash
-xme start <project_id>               # init + show stats
-xme add <project_id> <user> <text>   # add content to memory
-xme search <project_id> <query>      # search all layers
-xme facts <project_id>               # list facts
-xme stats <project_id>               # memory health
-xme export <project_id>              # export (obsidian/wiki/graphify)
-xme dashboard                        # launch web UI (port 8001)
-xme hook install [path]              # install Kiro + Claude Code hooks
-xme hook uninstall [path]            # remove hooks
+xce index <path> --repo-id <id>   # index a repository
+xce index <path> --full           # force full re-index
+xce index <path> --smart-docs     # skip trivial nodes (80% cheaper)
+xce serve                         # MCP stdio server
+xce serve --sse --port 8000       # MCP SSE server
+xce status                        # list indexed repos
 ```
+
+---
+
+## Configuration
+
+```bash
+# Neo4j (required)
+NEO4J_URI=bolt://localhost:7687
+NEO4J_USER=neo4j
+NEO4J_PASSWORD=your-password
+
+# LLM for doc generation (optional — layers 2-4)
+OPENROUTER_API_KEY=sk-or-...
+EMBEDDING_MODEL=openai/text-embedding-3-small
+EMBEDDING_DIMENSIONS=512
+
+# PostgreSQL for incremental indexing (optional)
+POSTGRES_URI=postgresql://xce:password@localhost:5432/xce_index
+```
+
+See [`.env.example`](.env.example) for the complete reference.
+
+---
+
+## With Xanther Memory Engine
+
+XCE pairs with [XME](https://github.com/Xanther-Ai/xanther-memory-engine) to give agents both structural awareness (XCE) and session memory (XME):
+
+```bash
+pip install "xanther-context-engine[memory]"  # installs xme automatically
+```
+
+XCE facts link to XME decisions via `REFERENCES_CODE` — so "why did we build auth this way?" surfaces both the architectural context and the original decision.
 
 ---
 
 ## Contributing
 
-Xanther is open source under the Apache 2.0 license. Contributions welcome.
-
-The most useful contributions:
-- **Real-world sessions** — run XME on your project, share what facts got extracted (and what got missed)
-- **Extraction improvements** — better regex patterns or LLM prompts for fact extraction
-- **New exporters** — Notion, Linear, Confluence
-- **Language support** — more tree-sitter parsers for XCE
-
-See [CONTRIBUTING.md](CONTRIBUTING.md) for setup instructions.
+See [CONTRIBUTING.md](CONTRIBUTING.md). Most useful contributions:
+- New language parsers (add to `xce/parsers/`)
+- Benchmark results on real codebases
+- MCP client integration guides
 
 ---
 
