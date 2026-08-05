@@ -59,11 +59,49 @@ class DocGenConfig:
 
 
 @dataclass(frozen=True)
+class XMEConfig:
+    """Configuration for the Xanther Memory Engine (XME).
+
+    XME is fully local-first and open source.
+    All memory is stored in <repo>/.xanther/memory/ by default.
+    """
+    # Storage
+    memory_dir: str = field(
+        default_factory=lambda: _env("XME_MEMORY_DIR", "")
+    )  # empty = auto-detect from repo root
+
+    # Hot cache
+    cache_max_size: int = field(
+        default_factory=lambda: _env_int("XME_CACHE_MAX_SIZE", 256)
+    )
+    cache_ttl_seconds: float = field(
+        default_factory=lambda: float(_env("XME_CACHE_TTL_SECONDS", "3600"))
+    )
+
+    # Team sync
+    sync_enabled: bool = field(
+        default_factory=lambda: _env("XME_SYNC_ENABLED", "true").lower() == "true"
+    )
+    sync_remote: str = field(
+        default_factory=lambda: _env("XME_SYNC_REMOTE", "origin")
+    )
+    sync_branch: str = field(
+        default_factory=lambda: _env("XME_SYNC_BRANCH", "main")
+    )
+
+    # Behaviour
+    auto_capture_sessions: bool = field(
+        default_factory=lambda: _env("XME_AUTO_CAPTURE", "false").lower() == "true"
+    )
+
+
+@dataclass(frozen=True)
 class Settings:
     neo4j: Neo4jConfig = field(default_factory=Neo4jConfig)
     embedding: EmbeddingConfig = field(default_factory=EmbeddingConfig)
     summarizer: SummarizerConfig = field(default_factory=SummarizerConfig)
     doc_gen: DocGenConfig = field(default_factory=DocGenConfig)
+    xme: XMEConfig = field(default_factory=XMEConfig)
     openrouter_api_key: str = field(default_factory=lambda: _env("OPENROUTER_API_KEY"))
     kimi_api_key: str = field(default_factory=lambda: _env("KIMI_API_KEY"))
     runpod_api_key: str = field(default_factory=lambda: _env("RUN_POD_API_KEY"))

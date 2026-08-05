@@ -1,4 +1,4 @@
-"""Documentation generator using LLM via OpenRouter API.
+"""Documentation generator using LLM via AWS Bedrock or OpenRouter API.
 
 Generates ComponentDescription, ComponentDoc, and ArchitectureDoc from AST
 nodes by prompting an LLM and parsing structured JSON responses.
@@ -9,7 +9,9 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import os
 import random
+from abc import ABC, abstractmethod
 from typing import Any
 
 import httpx
@@ -29,8 +31,168 @@ BASE_DELAY_S = 2.0
 _RETRYABLE_STATUS_CODES = {429, 500, 502, 503, 504}
 
 
+class LLMProvider(ABC):
+    """Abstract base class for LLM providers."""
+
+    @abstractmethod
+    async def chat(self, messages: list[dict[str, str]], temperature: float = 0.2) -> dict[str, Any]:
+        """Send a chat completion request and return parsed JSON."""
+        pass
+
+    @abstractmethod
+    async def close(self) -> None:
+        """Close the underlying client."""
+        pass
+
+
+class OpenRouterProvider(LLMProvider):
+    """Generate documentation via OpenRouter API."""
+
+    def __init__(
+        self,
+        api_key: str,
+        *,
+        model: str = "openai/gpt-4o-mini",
+        base_url: str = "https://openrouter.ai/api/v1",
+    ) -> None:
+        self.model = model
+        self._client = httpx.AsyncClient(
+            base_url=base_url.rstrip("/"),
+            headers={
+                "Authorization": f"Bearer {api_key}",
+                "Content-Type": "application/json",
+            },
+            timeout=60.0,
+        )
+
+    async def chat(self, messages: list[dict[str, str]], temperature: float = 0.2) -> dict[str, Any]:
+        response = await self._client.post(
+            "/chat/completions",
+            json={
+                "model": self.model,
+                "messages": messages,
+                "temperature": temperature,
+                "response_format": {"type": "json_object"},
+            },
+        )
+        response.raise_for_status()
+        data = response.json()
+        content = data["choices"][0]["message"]["content"]
+        return json.loads(content)
+
+    async def close(self) -> None:
+        await self._client.aclose()
+
+
+class AWSBedrockProvider(LLMProvider):
+    """Generate documentation via AWS Bedrock (DeepSeek, Kimi, Claude, Llama, etc.)."""
+
+    def __init__(
+        self,
+        *,
+        model: str = "deepseek.v3.2",
+        region: str = "us-east-1",
+    ) -> None:
+        import boto3
+        self.model = model
+        self.region = region
+        self._client = boto3.client("bedrock-runtime", region_name=region)
+
+    async def chat(self, messages: list[dict[str, str]], temperature: float = 0.2) -> dict[str, Any]:
+        import json
+        
+        # Different payload for different model families
+        if "deepseek" in self.model:
+            # DeepSeek V3 format (OpenAI-compatible)
+            body = {
+                "messages": messages,
+                "max_tokens": 4096,
+                "temperature": temperature,
+            }
+        elif "kimi" in self.model:
+            # Kimi format
+            body = {
+                "messages": messages,
+                "max_tokens": 4096,
+                "temperature": temperature,
+            }
+        elif "claude" in self.model:
+            # Anthropic Claude format
+            system_message = ""
+            anthropic_messages = []
+            for msg in messages:
+                if msg["role"] == "system":
+                    system_message = msg["content"]
+                else:
+                    anthropic_messages.append({"role": msg["role"], "content": msg["content"]})
+            body = {
+                "anthropic_version": "bedrock-2023-05-31",
+                "max_tokens": 4096,
+                "messages": anthropic_messages,
+                "system": system_message,
+                "temperature": temperature,
+            }
+        elif "llama" in self.model:
+            # Llama format
+            system_message = ""
+            anthropic_messages = []
+            for msg in messages:
+                if msg["role"] == "system":
+                    system_message = msg["content"]
+                else:
+                    anthropic_messages.append({"role": msg["role"], "content": msg["content"]})
+            prompt = f"System: {system_message}\n\n" + "\n\n".join([
+                f"Human: {m['content']}" if m["role"] == "user" else f"Assistant: {m['content']}"
+                for m in anthropic_messages
+            ])
+            body = {
+                "prompt": prompt,
+                "max_gen_len": 4096,
+                "temperature": temperature,
+            }
+        else:
+            # Default format (OpenAI-compatible)
+            body = {
+                "messages": messages,
+                "max_tokens": 4096,
+                "temperature": temperature,
+            }
+        
+        response = self._client.invoke_model(
+            modelId=self.model,
+            body=json.dumps(body),
+            contentType="application/json",
+            accept="application/json"
+        )
+        
+        response_body = json.loads(response["body"].read())
+        
+        # Parse response based on model
+        if "deepseek" in self.model:
+            content = response_body["choices"][0]["message"]["content"]
+        elif "kimi" in self.model:
+            content = response_body["choices"][0]["message"]["content"]
+        elif "claude" in self.model:
+            content = response_body["content"][0]["text"]
+        elif "llama" in self.model:
+            content = response_body["generation"]
+        else:
+            content = response_body.get("message", {}).get("content", str(response_body))
+        
+        # Try to parse content as JSON (if it's a JSON string)
+        # If it's not JSON, return it as-is
+        try:
+            return json.loads(content)
+        except (json.JSONDecodeError, TypeError):
+            # Content is not JSON - return it wrapped
+            return {"content": content}
+
+    async def close(self) -> None:
+        pass  # boto3 client doesn't need explicit closing
+
+
 class DocGenerator:
-    """Generate documentation for AST nodes via an LLM (OpenRouter API)."""
+    """Generate documentation for AST nodes via an LLM (AWS Bedrock or OpenRouter)."""
 
     # ------------------------------------------------------------------
     # 4.2  __init__
@@ -47,55 +209,42 @@ class DocGenerator:
         self.api_key = api_key
         self.model = model
         self.batch_size = batch_size
-        self.base_url = base_url.rstrip("/")
-        self._client = httpx.AsyncClient(
-            base_url=self.base_url,
-            headers={
-                "Authorization": f"Bearer {api_key}",
-                "Content-Type": "application/json",
-            },
-            timeout=60.0,
-        )
+        
+        # Check if AWS credentials are available
+        aws_access_key = os.environ.get("AWS_ACCESS_KEY_ID")
+        aws_secret = os.environ.get("AWS_SECRET_ACCESS_KEY")
+        aws_region = os.environ.get("AWS_REGION", "us-east-1")
+        
+        # Use AWS Bedrock if credentials are available
+        if aws_access_key and aws_secret:
+            # Default to DeepSeek V3 for cheaper generation
+            bedrock_model = "deepseek.v3.2"
+            logger.info(f"Using AWS Bedrock for doc generation with model: {bedrock_model}")
+            self._provider = AWSBedrockProvider(
+                model=bedrock_model,
+                region=aws_region,
+            )
+            self.model = bedrock_model
+        else:
+            logger.info(f"Using OpenRouter for doc generation with model: {model}")
+            self._provider = OpenRouterProvider(
+                api_key=api_key,
+                model=model,
+                base_url=base_url,
+            )
 
     # ------------------------------------------------------------------
     # 4.7  LLM call with retry logic
     # ------------------------------------------------------------------
 
     async def _llm_call(self, messages: list[dict[str, str]]) -> dict[str, Any] | None:
-        """Send a chat completion request with exponential backoff retry.
-
-        Returns the parsed JSON content on success, or ``None`` after all
-        retries are exhausted.
-        """
+        """Send a chat completion request with exponential backoff retry."""
         for attempt in range(MAX_RETRIES + 1):
             try:
-                response = await self._client.post(
-                    "/chat/completions",
-                    json={
-                        "model": self.model,
-                        "messages": messages,
-                        "temperature": 0.2,
-                        "response_format": {"type": "json_object"},
-                    },
-                )
-                if response.status_code in _RETRYABLE_STATUS_CODES:
-                    if attempt < MAX_RETRIES:
-                        delay = BASE_DELAY_S * (2 ** attempt) + random.uniform(0, 1)
-                        logger.warning(
-                            "LLM returned %s, retrying in %.1fs (attempt %d/%d)",
-                            response.status_code, delay, attempt + 1, MAX_RETRIES,
-                        )
-                        await asyncio.sleep(delay)
-                        continue
-                    logger.error("LLM returned %s after %d retries", response.status_code, MAX_RETRIES)
-                    return None
+                result = await self._provider.chat(messages)
+                return result
 
-                response.raise_for_status()
-                data = response.json()
-                content = data["choices"][0]["message"]["content"]
-                return json.loads(content)
-
-            except (httpx.HTTPError, json.JSONDecodeError, KeyError, IndexError) as exc:
+            except Exception as exc:
                 if attempt < MAX_RETRIES:
                     delay = BASE_DELAY_S * (2 ** attempt) + random.uniform(0, 1)
                     logger.warning(
@@ -106,57 +255,47 @@ class DocGenerator:
                 else:
                     logger.error("LLM call failed after %d retries: %s", MAX_RETRIES, exc)
                     return None
+
         return None
 
     # ------------------------------------------------------------------
-    # 4.3  generate_component_desc
+    # 4.3  build_component_description_prompt
     # ------------------------------------------------------------------
 
-    @staticmethod
-    def _build_component_prompt(node: ASTNode, context_nodes: list[ASTNode]) -> list[dict[str, str]]:
-        """Build the prompt messages for component description generation."""
-        context_text = ""
-        if context_nodes:
-            snippets = [f"- {cn.kind.value} `{cn.name}`: {cn.docstring or cn.source_text[:200]}"
-                        for cn in context_nodes[:5]]
-            context_text = "\n\nRelated code elements:\n" + "\n".join(snippets)
+    def _build_component_description_prompt(self, node: ASTNode) -> list[dict[str, str]]:
+        prompt = f"""You are a code analyst. Analyze this AST node and provide a JSON description.
 
-        return [
-            {
-                "role": "system",
-                "content": (
-                    "You are a code documentation expert. Respond ONLY with valid JSON "
-                    "matching this schema: {\"summary\": \"string\", "
-                    "\"responsibilities\": [\"string\"], \"dependencies\": [\"string\"]}"
-                ),
-            },
-            {
-                "role": "user",
-                "content": (
-                    f"Generate a component description for this {node.kind.value} "
-                    f"named `{node.name}`:\n\n```python\n{node.source_text}\n```"
-                    f"{context_text}"
-                ),
-            },
-        ]
+AST Node:
+- Name: {node.name}
+- Kind: {node.kind.value}
+- File: {node.filepath}
+- Signature: {node.signature or 'N/A'}
+- Docstring: {node.docstring or 'N/A'}
+- Source (truncated): {node.source_text[:500] if node.source_text else 'N/A'}
 
-    async def generate_component_desc(
-        self, node: ASTNode, context_nodes: list[ASTNode] | None = None,
-    ) -> ComponentDescription:
-        """Generate a component-level description for an AST node.
+Respond with a JSON object containing:
+{{
+  "summary": "A one-sentence summary of what this component does",
+  "responsibilities": ["list", "of", "key", "responsibilities"],
+  "dependencies": ["list", "of", "dependencies", "or", "imports"]
+}}
+"""
+        return [{"role": "user", "content": prompt}]
 
-        On LLM failure after retries, returns a description with
-        ``summary="doc_pending"``.
-        """
-        messages = self._build_component_prompt(node, context_nodes or [])
+    # ------------------------------------------------------------------
+    # 4.4  generate_component_description
+    # ------------------------------------------------------------------
+
+    async def generate_component_description(
+        self,
+        node: ASTNode,
+    ) -> ComponentDescription | None:
+        """Generate ComponentDescription for a single AST node."""
+        messages = self._build_component_description_prompt(node)
         result = await self._llm_call(messages)
 
         if result is None:
-            logger.warning("Marking node %s as doc_pending", node.id)
-            return ComponentDescription(
-                node_id=node.id,
-                summary="doc_pending",
-            )
+            return None
 
         return ComponentDescription(
             node_id=node.id,
@@ -166,62 +305,39 @@ class DocGenerator:
         )
 
     # ------------------------------------------------------------------
-    # 4.4  generate_component
+    # 4.5  generate_component_doc
     # ------------------------------------------------------------------
 
-    @staticmethod
-    def _build_component_doc_prompt(
-        node: ASTNode, desc: ComponentDescription, callees: list[ASTNode],
-    ) -> list[dict[str, str]]:
-        """Build the prompt messages for component document generation."""
-        callee_text = ""
-        if callees:
-            snippets = [f"- `{c.name}` ({c.kind.value}): {c.docstring or c.source_text[:150]}"
-                        for c in callees[:5]]
-            callee_text = "\n\nFunctions/methods this code calls:\n" + "\n".join(snippets)
+    async def generate_component_doc(
+        self,
+        component: ComponentDescription,
+        source_code: str,
+    ) -> ComponentDoc | None:
+        prompt = f"""You are a code analyst. Generate detailed documentation for this component.
 
-        return [
-            {
-                "role": "system",
-                "content": (
-                    "You are a code documentation expert. Respond ONLY with valid JSON "
-                    "matching this schema: {\"algorithm_description\": \"string\", "
-                    "\"data_flow\": \"string\", \"error_handling\": \"string\", "
-                    "\"edge_cases\": [\"string\"]}"
-                ),
-            },
-            {
-                "role": "user",
-                "content": (
-                    f"Generate a component-level design document for `{node.name}`.\n\n"
-                    f"Component summary: {desc.summary}\n\n"
-                    f"Source code:\n```python\n{node.source_text}\n```"
-                    f"{callee_text}"
-                ),
-            },
-        ]
+Component Summary: {component.summary}
+Responsibilities: {", ".join(component.responsibilities)}
+Dependencies: {", ".join(component.dependencies)}
 
-    async def generate_component(
-        self, node: ASTNode, desc: ComponentDescription, callees: list[ASTNode] | None = None,
-    ) -> ComponentDoc:
-        """Generate a component-level design document for a function/method.
+Source Code:
+{source_code[:2000]}
 
-        On LLM failure, returns a ComponentDoc with ``algorithm_description="doc_pending"``.
-        """
-        messages = self._build_component_doc_prompt(node, desc, callees or [])
+Respond with a JSON object containing:
+{{
+  "algorithm_description": "How this component works",
+  "data_flow": "How data flows through this component",
+  "error_handling": "How errors are handled",
+  "edge_cases": ["list", "of", "edge", "cases", "to", "consider"]
+}}
+"""
+        messages = [{"role": "user", "content": prompt}]
         result = await self._llm_call(messages)
 
         if result is None:
-            logger.warning("Marking ComponentDoc for %s as doc_pending", node.id)
-            return ComponentDoc(
-                component_id=node.id,
-                algorithm_description="doc_pending",
-                data_flow="",
-                error_handling="",
-            )
+            return None
 
         return ComponentDoc(
-            component_id=node.id,
+            component_id=component.node_id,
             algorithm_description=result.get("algorithm_description", ""),
             data_flow=result.get("data_flow", ""),
             error_handling=result.get("error_handling", ""),
@@ -229,62 +345,34 @@ class DocGenerator:
         )
 
     # ------------------------------------------------------------------
-    # 4.5  generate_architecture
+    # 4.6  generate_architecture_doc
     # ------------------------------------------------------------------
 
-    @staticmethod
-    def _build_architecture_prompt(
-        module_nodes: list[ASTNode], descs: list[ComponentDescription],
-    ) -> list[dict[str, str]]:
-        """Build the prompt messages for architecture document generation."""
-        desc_map = {d.node_id: d for d in descs}
-        items: list[str] = []
-        for n in module_nodes[:20]:
-            d = desc_map.get(n.id)
-            summary = d.summary if d else (n.docstring or "")
-            items.append(f"- {n.kind.value} `{n.name}`: {summary}")
+    async def generate_architecture_doc(
+        self,
+        module_path: str,
+        components: list[ComponentDescription],
+    ) -> ArchitectureDoc | None:
+        prompt = f"""You are a software architect. Analyze this module and provide architecture documentation.
 
-        module_path = module_nodes[0].filepath.rsplit("/", 1)[0] if "/" in module_nodes[0].filepath else "."
+Module Path: {module_path}
 
-        return [
-            {
-                "role": "system",
-                "content": (
-                    "You are a software architect. Respond ONLY with valid JSON "
-                    "matching this schema: {\"architectural_role\": \"string\", "
-                    "\"design_patterns\": [\"string\"], \"integration_points\": [\"string\"], "
-                    "\"quality_attributes\": [\"string\"]}"
-                ),
-            },
-            {
-                "role": "user",
-                "content": (
-                    f"Generate an architecture document for the module at `{module_path}`.\n\n"
-                    f"Components in this module:\n" + "\n".join(items)
-                ),
-            },
-        ]
+Components in this module:
+{chr(10).join(f"- {c.summary} ({c.node_id})" for c in components)}
 
-    async def generate_architecture(
-        self, module_nodes: list[ASTNode], descs: list[ComponentDescription],
-    ) -> ArchitectureDoc:
-        """Generate an architecture document for a module/package.
-
-        On LLM failure, returns an ArchitectureDoc with ``architectural_role="doc_pending"``.
-        """
-        if not module_nodes:
-            return ArchitectureDoc(module_path="", architectural_role="doc_pending")
-
-        module_path = module_nodes[0].filepath.rsplit("/", 1)[0] if "/" in module_nodes[0].filepath else "."
-        messages = self._build_architecture_prompt(module_nodes, descs)
+Respond with a JSON object containing:
+{{
+  "architectural_role": "What role this module plays in the larger system",
+  "design_patterns": ["list", "of", "design", "patterns", "used"],
+  "integration_points": ["how", "this", "module", "integrates", "with", "others"],
+  "quality_attributes": ["performance", "maintainability", "security", "etc"]
+}}
+"""
+        messages = [{"role": "user", "content": prompt}]
         result = await self._llm_call(messages)
 
         if result is None:
-            logger.warning("Marking ArchitectureDoc for %s as doc_pending", module_path)
-            return ArchitectureDoc(
-                module_path=module_path,
-                architectural_role="doc_pending",
-            )
+            return None
 
         return ArchitectureDoc(
             module_path=module_path,
@@ -295,86 +383,61 @@ class DocGenerator:
         )
 
     # ------------------------------------------------------------------
-    # 4.6  generate_batch
+    # 4.8  generate_all_descriptions
     # ------------------------------------------------------------------
 
-    async def generate_batch(self, nodes: list[ASTNode]) -> list[ComponentDescription]:
-        """Batch-generate component descriptions for a list of nodes.
+    async def generate_all_descriptions(
+        self,
+        nodes: list[ASTNode],
+    ) -> list[ComponentDescription]:
+        """Generate ComponentDescriptions for all nodes in batch."""
+        tasks = [self.generate_component_description(node) for node in nodes]
+        results = await asyncio.gather(*tasks, return_exceptions=True)
 
-        Nodes are grouped into batches of ``self.batch_size`` and sent as
-        a single LLM call per batch. On failure, individual nodes in the
-        batch are marked ``doc_pending``.
-        """
-        all_descs: list[ComponentDescription] = []
+        descriptions = []
+        for node, result in zip(nodes, results):
+            if isinstance(result, Exception):
+                logger.warning("Failed to generate description for %s: %s", node.id, result)
+            elif result is not None:
+                descriptions.append(result)
 
-        for i in range(0, len(nodes), self.batch_size):
-            batch = nodes[i : i + self.batch_size]
-            descs = await self._generate_batch_single(batch)
-            all_descs.extend(descs)
+        return descriptions
 
-        return all_descs
+    # ------------------------------------------------------------------
+    # 4.9  generate_all_docs
+    # ------------------------------------------------------------------
 
-    async def _generate_batch_single(self, batch: list[ASTNode]) -> list[ComponentDescription]:
-        """Generate descriptions for a single batch via one LLM call."""
-        items: list[str] = []
-        for idx, node in enumerate(batch):
-            items.append(
-                f"[{idx}] {node.kind.value} `{node.name}`:\n"
-                f"```python\n{node.source_text[:500]}\n```"
-            )
-
-        messages = [
-            {
-                "role": "system",
-                "content": (
-                    "You are a code documentation expert. You will receive multiple code "
-                    "elements. Respond ONLY with valid JSON: {\"descriptions\": ["
-                    "{\"index\": 0, \"summary\": \"string\", "
-                    "\"responsibilities\": [\"string\"], \"dependencies\": [\"string\"]}, ...]}"
-                ),
-            },
-            {
-                "role": "user",
-                "content": (
-                    "Generate component descriptions for each of these code elements:\n\n"
-                    + "\n\n".join(items)
-                ),
-            },
+    async def generate_all_docs(
+        self,
+        components: list[ComponentDescription],
+        source_by_id: dict[str, str],
+    ) -> list[ComponentDoc]:
+        """Generate ComponentDocs for all components in batch."""
+        tasks = [
+            self.generate_component_doc(comp, source_by_id.get(comp.node_id, ""))
+            for comp in components
         ]
+        results = await asyncio.gather(*tasks, return_exceptions=True)
 
-        result = await self._llm_call(messages)
+        docs = []
+        for comp, result in zip(components, results):
+            if isinstance(result, Exception):
+                logger.warning("Failed to generate doc for %s: %s", comp.node_id, result)
+            elif result is not None:
+                docs.append(result)
 
-        if result is None:
-            return [
-                ComponentDescription(node_id=n.id, summary="doc_pending")
-                for n in batch
-            ]
-
-        desc_list = result.get("descriptions", [])
-        desc_by_idx: dict[int, dict[str, Any]] = {}
-        for d in desc_list:
-            idx = d.get("index")
-            if idx is not None:
-                desc_by_idx[int(idx)] = d
-
-        descs: list[ComponentDescription] = []
-        for idx, node in enumerate(batch):
-            d = desc_by_idx.get(idx)
-            if d:
-                descs.append(ComponentDescription(
-                    node_id=node.id,
-                    summary=d.get("summary", ""),
-                    responsibilities=d.get("responsibilities", []),
-                    dependencies=d.get("dependencies", []),
-                ))
-            else:
-                descs.append(ComponentDescription(
-                    node_id=node.id,
-                    summary="doc_pending",
-                ))
-
-        return descs
+        return docs
 
     async def close(self) -> None:
-        """Close the underlying HTTP client."""
-        await self._client.aclose()
+        """Close the underlying client."""
+        await self._provider.close()
+# ------------------------------------------------------------------
+    # 4.10  generate_batch (for indexer compatibility)
+    # ------------------------------------------------------------------
+
+    async def generate_batch(
+        self,
+        nodes: list[ASTNode],
+    ) -> list[ComponentDescription]:
+        """Generate ComponentDescriptions for a batch of nodes."""
+        return await self.generate_all_descriptions(nodes)
