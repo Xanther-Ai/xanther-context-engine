@@ -37,10 +37,12 @@ dependencies = [
     "tree-sitter-swift>=0.7",
     "tree-sitter-c>=0.23",
     "tree-sitter-cpp>=0.23",
-    "sentence-transformers>=2.7,<4.0",  # local embeddings for XME vector dedup
 ]
 
 [project.optional-dependencies]
+memory = [
+    "xanther-memory-engine>=0.1.0",  # optional memory layer
+]
 dev = [
     "pytest>=8.0",
     "pytest-asyncio>=0.23",
@@ -50,11 +52,9 @@ dev = [
 ]
 xme = [
     "opensearch-py>=2.4,<3.0",
-    "sentence-transformers>=2.7,<4.0",
 ]
 xme-full = [
     "opensearch-py>=2.4,<3.0",
-    "sentence-transformers>=2.7,<4.0",
     "neo4j>=5.0,<6.0",
 ]
 
@@ -80,4 +80,4 @@ xce-mcp-server = "xce.server.cli:run"
 xme = "xme.cli:main"
 
 [tool.hatch.build.targets.wheel]
-packages = ["xce", "xme"]
+packages = ["xce"]
