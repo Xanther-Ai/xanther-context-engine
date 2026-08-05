@@ -12,17 +12,41 @@
 
 ---
 
-> AI assistants read your entire codebase every question. They grep instead of navigate. They miss architectural context that only a graph can provide. XCE fixes this.
+> On SWE-bench Verified: **MiniMax M2.5 + XCE scored 78.2%**, beating Claude Opus 4.5 (76.8%) at **16x lower cost**. Sonnet 4.0 + XCE went from 66% → 73.4%. The improvement comes entirely from better context, not a better model.
 
-XCE turns any codebase into a **queryable knowledge graph** — functions, classes, imports, call edges, architecture layers — and serves it to AI agents via MCP. Works with Claude Code, Kiro, Cursor, Codex, and any MCP-compatible tool.
+XCE turns any codebase into a **queryable knowledge graph** — functions, classes, imports, call edges, and full architecture layers — and serves it to AI agents via MCP. Works with Claude Code, Kiro, Cursor, Codex, and any MCP-compatible tool.
 
 ```bash
 pip install xanther-context-engine
-xce index .                 # build the graph once
-xce serve                   # start MCP server
+xce index . --repo-id my-project    # build the graph once
+xce serve                           # start MCP server
 ```
 
 One command. Your agent now navigates by structure instead of grepping through files.
+
+---
+
+## Benchmark Results
+
+All on [SWE-bench Verified](https://www.swebench.com/) (500 instances) using mini-swe-agent:
+
+| Setup | Resolve Rate | Cost/Instance | vs Baseline |
+|-------|-------------|---------------|-------------|
+| **MiniMax M2.5 + XCE** | **78.2%** | $0.22 | +2.4pp over Opus 4.5 at 16x lower cost |
+| Claude 4.5 Opus (baseline) | 76.8% | $3.50 | — |
+| MiniMax M2.5 (baseline) | 75.8% | $0.07 | — |
+| **Sonnet 4.0 + XCE** | **73.4%** | $0.22 | +7.4pp over baseline |
+| Sonnet 4.0 (baseline) | 66.0% | $0.22 | — |
+
+Full benchmark data: [github.com/Xanther-Ai/xce-benchmarks](https://github.com/Xanther-Ai/xce-benchmarks)
+
+```mermaid
+xychart-beta
+    title "SWE-bench Verified Resolve Rate (%)"
+    x-axis ["Sonnet 4.0\nbaseline", "MiniMax M2.5\nbaseline", "Sonnet 4.0\n+ XCE", "Claude Opus 4.5\nbaseline", "MiniMax M2.5\n+ XCE"]
+    y-axis "Resolve Rate (%)" 60 --> 80
+    bar [66.0, 75.8, 73.4, 76.8, 78.2]
+```
 
 ---
 
@@ -35,7 +59,7 @@ graph TB
         DOCS[Docs & Configs<br/>Markdown · OpenAPI · SQL]
     end
 
-    subgraph "XCE Indexing Pipeline"
+    subgraph "XCE PRAT Pipeline"
         direction LR
         L1[Layer 1<br/>AST Parsing<br/>tree-sitter]
         L2[Layer 2<br/>Component Descriptions<br/>LLM summaries]
@@ -106,18 +130,38 @@ graph LR
 
 ---
 
+## How it works — PRAT
+
+PRAT (Persistent Recursive Abstract Tree) builds a multi-level structured index:
+
+```mermaid
+flowchart LR
+    subgraph "Architecture Layer (HLD)"
+        A[Module roles<br/>Design patterns<br/>Integration points<br/>Quality attributes]
+    end
+    subgraph "Component Layer (LLD)"
+        B[Class/function summaries<br/>Algorithm descriptions<br/>Data flow<br/>Error handling]
+    end
+    subgraph "Code Layer (AST)"
+        C[Functions · Classes<br/>Imports · Call edges<br/>Inheritance · Decorators]
+    end
+    C --> B --> A
+```
+
+The key difference from embedding-only search: PRAT captures **structural relationships**. Your agent can ask "what depends on this function?" and get a real traversal answer — not just semantically similar snippets.
+
+---
+
 ## Four indexing layers
 
-XCE enriches your code graph in four sequential layers:
+| Layer | What it produces | LLM? | Cost |
+|-------|-----------------|------|------|
+| 1 — AST Parsing | Functions, classes, imports, call edges | No | Free |
+| 2 — Component Descriptions | 1-2 sentence summary per symbol | Yes | ~$0.002/file |
+| 3 — Component Docs | Algorithm, data flow, error handling per function | Yes | ~$0.01/file |
+| 4 — Architecture Docs | Module roles, design patterns, integration points | Yes | ~$0.05/module |
 
-| Layer | What it produces | LLM? |
-|-------|-----------------|------|
-| 1 — AST Parsing | Functions, classes, imports, call edges | No |
-| 2 — Component Descriptions | 1-2 sentence summary per symbol | Yes |
-| 3 — Component Docs | Algorithm, data flow, error handling | Yes |
-| 4 — Architecture Docs | Module roles, design patterns, integration points | Yes |
-
-Layer 1 is always free — just tree-sitter. Layers 2-4 use your LLM API key (optional, enable with `--smart-docs` to reduce cost ~80%).
+Use `--smart-docs` to skip trivial nodes (variables, tiny functions) — reduces cost ~80% with minimal quality loss.
 
 ---
 
@@ -125,11 +169,10 @@ Layer 1 is always free — just tree-sitter. Layers 2-4 use your LLM API key (op
 
 ```bash
 pip install xanther-context-engine
-cp .env.example .env        # add NEO4J_PASSWORD + OPENROUTER_API_KEY
-docker-compose up -d        # start Neo4j + PostgreSQL
-
+cp .env.example .env         # add NEO4J_PASSWORD + OPENROUTER_API_KEY
+docker-compose up -d         # start Neo4j + PostgreSQL
 xce index . --repo-id my-project --smart-docs
-xce serve                   # MCP server on stdio
+xce serve
 ```
 
 Add to your MCP config (`~/.kiro/settings/mcp.json` or `~/.claude/settings.json`):
@@ -141,12 +184,26 @@ Add to your MCP config (`~/.kiro/settings/mcp.json` or `~/.claude/settings.json`
       "command": "xce-mcp-server",
       "env": {
         "NEO4J_URI": "bolt://localhost:7687",
-        "NEO4J_PASSWORD": "your-password"
+        "NEO4J_PASSWORD": "your-password",
+        "OPENROUTER_API_KEY": "sk-or-..."
       }
     }
   }
 }
 ```
+
+Or remote SSE:
+```json
+{
+  "mcpServers": {
+    "xce": {
+      "url": "http://localhost:8000/sse?repo_id=my-project"
+    }
+  }
+}
+```
+
+Works with: **Claude Code, Kiro, Cursor, Windsurf, OpenCode, Cline**.
 
 ---
 
@@ -154,84 +211,98 @@ Add to your MCP config (`~/.kiro/settings/mcp.json` or `~/.claude/settings.json`
 
 | Tool | Description |
 |------|-------------|
-| `xce_architecture_context` | Full architectural context for a file or symbol |
-| `xce_search` | Semantic + symbol search across the graph |
-| `xce_impact_analysis` | Blast radius — what breaks if you change this? |
-| `xce_trace` | Trace from code to component to architecture |
-| `xce_index_repo` | Trigger incremental re-index |
+| `xce_architecture_context` | Full architectural context for a file or symbol — role, callers, architectural layer |
+| `xce_search` | Semantic + symbol search across the graph — finds by meaning, not just text |
+| `xce_impact_analysis` | Blast radius — what breaks if you change this? Fan-in callers, test coverage |
+| `xce_trace` | Trace from code → component description → architecture documentation |
+| `xce_index_repo` | Trigger incremental re-index on changed files |
 
 With [XME installed](https://github.com/Xanther-Ai/xanther-memory-engine), 11 additional memory tools are available automatically.
 
 ---
 
-## Language support
-
-14 languages via tree-sitter, with more on the way:
-
-| Language | Extensions |
-|----------|-----------|
-| Python | `.py` |
-| TypeScript / JavaScript | `.ts` `.tsx` `.js` `.jsx` |
-| Go | `.go` |
-| Rust | `.rs` |
-| Java | `.java` |
-| C# | `.cs` |
-| Kotlin | `.kt` |
-| Ruby | `.rb` |
-| PHP | `.php` |
-| Swift | `.swift` |
-| C / C++ | `.c` `.cpp` `.h` `.hpp` |
-
----
-
 ## Incremental indexing
-
-XCE uses SHA-256 content hashing (stored in PostgreSQL) to re-index only changed files:
 
 ```mermaid
 sequenceDiagram
     participant Dev as Developer
     participant XCE as xce index
-    participant PG as PostgreSQL
+    participant PG as PostgreSQL<br/>(file hashes)
     participant NEO4J as Neo4j
 
     Dev->>XCE: xce index . (second run)
-    XCE->>PG: get stored hashes
-    PG-->>XCE: {file: hash, ...}
-    XCE->>XCE: SHA-256 all files
-    XCE->>XCE: diff — find changed files only
-    XCE->>NEO4J: upsert changed nodes/edges
-    XCE->>PG: update hashes
+    XCE->>PG: get stored file hashes
+    PG-->>XCE: {file: sha256, ...}
+    XCE->>XCE: compute current SHA-256s
+    XCE->>XCE: diff → 3 changed, 97 unchanged
+    XCE->>NEO4J: upsert only changed nodes/edges
+    XCE->>PG: update hashes for changed files
     XCE-->>Dev: ✓ 3 files re-indexed (97 skipped)
 ```
 
 ---
 
+## Language support
+
+| Language | Extensions | Status |
+|----------|-----------|--------|
+| Python | `.py` | ✅ Stable |
+| TypeScript / JavaScript | `.ts` `.tsx` `.js` `.jsx` | ✅ Stable |
+| Go | `.go` | ✅ Stable |
+| Rust | `.rs` | ✅ Stable |
+| Java | `.java` | ✅ Stable |
+| C# | `.cs` | ✅ Stable |
+| Kotlin | `.kt` | ✅ Stable |
+| Ruby | `.rb` | ✅ Stable |
+| PHP | `.php` | ✅ Stable |
+| Swift | `.swift` | ✅ Stable |
+| C / C++ | `.c` `.cpp` `.h` `.hpp` | ✅ Stable |
+
+---
+
 ## Comparison
 
-| | Graphify | Serena | Sourcegraph | **XCE** |
-|--|---------|--------|-------------|---------|
-| Code graph (AST) | ✅ | ✅ (LSP) | ✅ | ✅ |
-| Architecture docs | ❌ | ❌ | ❌ | ✅ |
-| Component descriptions | ❌ | ❌ | ❌ | ✅ |
-| Semantic search | ❌ | ❌ | ✅ | ✅ |
-| Impact analysis | ❌ | partial | partial | ✅ |
-| Multi-language | ✅ (19) | ✅ (40 via LSP) | ✅ | ✅ (14) |
-| MCP tools | 1 | ✅ | ❌ | ✅ (5) |
-| Local-first | ✅ | ✅ | ❌ | ✅ |
-| Persistent memory | ❌ | ❌ | ❌ | ✅ via XME |
+| | XCE | Augment Code | Serena | Graphify |
+|--|-----|-------------|--------|----------|
+| Architecture awareness | ✅ Architecture→Component→Code | ❌ Flat embeddings | ❌ Symbol-level | ✅ Knowledge graph |
+| Impact analysis | ✅ Blast radius + callers | ❌ | ❌ | ❌ |
+| Call graph traversal | ✅ Multi-hop | ❌ | ✅ LSP-based | ❌ |
+| Semantic search | ✅ Embeddings + graph | ✅ Embeddings | ❌ | ✅ |
+| MCP native | ✅ | ✅ | ✅ | ✅ (`--mcp`) |
+| Multi-language | ✅ 14 | ✅ | ✅ 40 via LSP | ✅ 19 |
+| Self-hosted | ✅ | ❌ Cloud | ✅ | ✅ |
+| SWE-bench | **78.2%** | Not published | Not published | Not published |
+| Persistent memory | ✅ via XME | ❌ | ❌ | ❌ |
+
+---
+
+## Docker
+
+Full stack with Docker Compose:
+
+```bash
+docker-compose up -d
+```
+
+Starts: Neo4j (graph store) + PostgreSQL (incremental hashing).
+
+Then index and serve:
+```bash
+xce index /path/to/repo --repo-id my-project
+xce serve --sse --port 8000   # remote agents connect via SSE
+```
 
 ---
 
 ## CLI reference
 
 ```bash
-xce index <path> --repo-id <id>   # index a repository
-xce index <path> --full           # force full re-index
-xce index <path> --smart-docs     # skip trivial nodes (80% cheaper)
-xce serve                         # MCP stdio server
-xce serve --sse --port 8000       # MCP SSE server
-xce status                        # list indexed repos
+xce index <path> --repo-id <id>    # index a repository
+xce index <path> --full            # force full re-index
+xce index <path> --smart-docs      # skip trivial nodes (~80% cost reduction)
+xce serve                          # MCP stdio server (for local IDEs)
+xce serve --sse --port 8000        # MCP SSE server (for remote agents)
+xce status                         # list indexed repositories + stats
 ```
 
 ---
@@ -245,6 +316,7 @@ NEO4J_USER=neo4j
 NEO4J_PASSWORD=your-password
 
 # LLM for doc generation (optional — layers 2-4)
+# Get key at: https://openrouter.ai/keys
 OPENROUTER_API_KEY=sk-or-...
 EMBEDDING_MODEL=openai/text-embedding-3-small
 EMBEDDING_DIMENSIONS=512
@@ -253,28 +325,92 @@ EMBEDDING_DIMENSIONS=512
 POSTGRES_URI=postgresql://xce:password@localhost:5432/xce_index
 ```
 
-See [`.env.example`](.env.example) for the complete reference.
+See [`.env.example`](.env.example) for full reference.
+
+---
+
+## Pre-indexed community repos
+
+Already indexed and queryable via the hosted MCP server:
+- Django, scikit-learn, sympy, matplotlib, pytest
+- FastAPI, Flask, Express, React
+- Coming soon: Gin (Go), Actix (Rust), Spring Boot (Java)
+
+Try XCE on Django without indexing:
+```json
+{
+  "mcpServers": {
+    "xce-django": {
+      "url": "https://mcp.xanther.ai/sse",
+      "headers": { "Authorization": "Bearer xce_community_key" }
+    }
+  }
+}
+```
 
 ---
 
 ## With Xanther Memory Engine
 
-XCE pairs with [XME](https://github.com/Xanther-Ai/xanther-memory-engine) to give agents both structural awareness (XCE) and session memory (XME):
+XCE pairs with [XME](https://github.com/Xanther-Ai/xanther-memory-engine) to give agents both **structural code awareness** (XCE) and **persistent session memory** (XME):
 
 ```bash
-pip install "xanther-context-engine[memory]"  # installs xme automatically
+pip install "xanther-context-engine[memory]"
 ```
 
-XCE facts link to XME decisions via `REFERENCES_CODE` — so "why did we build auth this way?" surfaces both the architectural context and the original decision.
+XCE graph nodes link to XME decision facts via `REFERENCES_CODE` — so "why did we build auth this way?" surfaces both the architectural graph context and the original team decision.
+
+---
+
+## Package structure
+
+```
+xce/
+├── __main__.py          # CLI entry point (xce index / xce serve / xce status)
+├── models.py            # ASTNode, ASTEdge, NodeKind, SearchResult, etc.
+├── config.py            # Environment-based configuration
+├── parser.py            # Cross-file import resolution
+├── parsers/             # 14 language parsers (tree-sitter based)
+├── graph/
+│   └── store.py         # Neo4j: upsert nodes/edges, semantic search, impact analysis
+├── indexing/
+│   ├── indexer.py       # Orchestrates 4-layer pipeline
+│   ├── workflow.py      # LangGraph-enforced 4-layer workflow
+│   ├── doc_generator.py # LLM doc generation (layers 2-4)
+│   ├── embedding.py     # Vector embeddings via OpenRouter
+│   └── hash_store.py    # PostgreSQL-backed incremental hash store
+├── server/
+│   └── mcp_server.py    # MCP server (stdio + SSE) — 5 XCE + 11 XME tools
+├── query/
+│   ├── agents.py        # LangGraph traversal agents
+│   ├── decomposition.py # Problem decomposition
+│   └── reasoning.py     # Multi-hop reasoning chains
+└── utils/
+    ├── circuit_breaker.py
+    └── complexity_router.py
+```
 
 ---
 
 ## Contributing
 
 See [CONTRIBUTING.md](CONTRIBUTING.md). Most useful contributions:
-- New language parsers (add to `xce/parsers/`)
+- New language parsers (`xce/parsers/`)
 - Benchmark results on real codebases
 - MCP client integration guides
+
+Join [Discord](https://discord.com/invite/p27qtGkTYw) for discussion.
+
+---
+
+## Links
+
+- [Website](https://xanther.ai)
+- [Hosted dashboard](https://app.xanther.ai)
+- [Discord](https://discord.com/invite/p27qtGkTYw)
+- [Benchmarks](https://github.com/Xanther-Ai/xce-benchmarks)
+- [Memory Engine (XME)](https://github.com/Xanther-Ai/xanther-memory-engine)
+- [Blog](https://medium.com/@xanther.ai)
 
 ---
 
