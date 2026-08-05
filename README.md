@@ -1,240 +1,339 @@
-# Xanther Context Engine (XCE)
+<div align="center">
 
-[![CI](https://github.com/Xanther-Ai/xanther-context-engine/actions/workflows/ci.yml/badge.svg)](https://github.com/Xanther-Ai/xanther-context-engine/actions/workflows/ci.yml)
+# Xanther
 
-**Deep codebase understanding for coding agents.** XCE indexes your repository into a structured knowledge graph and serves precise architectural context via MCP — so your agent always knows where it is and what matters.
+**The AI coding assistant memory layer that actually works.**
 
-> On SWE-bench Verified: MiniMax M2.5 + XCE scored **78.2%**, beating Claude Opus 4.5 (76.8%) at **16x lower cost**. Sonnet 4.0 + XCE went from 66% → 73.4%. The improvement comes entirely from better context, not a better model.
+[![License: Apache 2.0](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
+[![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-blue)](https://python.org)
+[![Tests](https://github.com/Xanther-Ai/xanther-context-engine/actions/workflows/ci.yml/badge.svg)](https://github.com/Xanther-Ai/xanther-context-engine/actions)
 
-## Quick Start
+</div>
+
+---
+
+> Your AI assistant re-reads your entire codebase every session. It forgets every decision you've made. It repeats the same failed approaches. Xanther fixes this.
+
+Xanther gives AI coding assistants **persistent memory** across sessions — decisions remembered, failures not repeated, context always current. Works with Claude Code, Kiro, Cursor, Codex, and any MCP-compatible tool. No cloud required.
 
 ```bash
-# 1. Install
-pip install -e .
-
-# 2. Start Neo4j
-docker compose up neo4j -d
-
-# 3. Index a repository
-python -m xce.indexer /path/to/your/repo
-
-# 4. Start MCP server
-python -m xce.mcp_server
+pip install xanther
+xme hook install .          # 30 seconds to set up
+xme start my-project        # memory starts now
 ```
 
-Your agent now has access to 5 tools: `xce_get_context`, `xce_search`, `xce_architecture_context`, `xce_trace`, `xce_impact_analysis`.
+---
 
-## How It Works — The PRAT Algorithm
+## What Xanther does
 
-PRAT (Persistent Recursive Abstract Tree) builds a multi-level structured index:
+Graphify maps what your code *is*. Xanther remembers what your team *did*.
 
-1. **AST Parsing** — Every function, class, and import extracted via tree-sitter (13 languages)
-2. **Structural Analysis** — Call graphs, inheritance chains, module dependencies mapped
-3. **Semantic Enrichment** — Each component gets a description of its role and architectural context via LLM
-4. **Embedding** — Semantic vectors enable similarity search across the entire codebase
-5. **Graph Storage** — Everything stored in Neo4j with relationships: CALLS, IMPORTS, CONTAINS, DEPENDS_ON
-
-The key difference from embedding-only search (like Augment Code): PRAT captures **structural relationships** between components. Your agent can ask "what depends on this function?" and get a real answer — something embeddings alone cannot provide.
+Every session, Xanther captures what was discussed, extracts decisions and lessons learned, and makes them available at the start of the next session — without you having to re-explain anything.
 
 ```
-┌─────────────────────────────────────────────────────────┐
-│                    Architecture                          │
-│  Modules, architectural patterns, system boundaries      │
-├─────────────────────────────────────────────────────────┤
-│                    Components                             │
-│  Components, classes, interfaces, data flow              │
-├─────────────────────────────────────────────────────────┤
-│                    Code Level                             │
-│  Functions, methods, call graphs, dependencies           │
-└─────────────────────────────────────────────────────────┘
+Session 1:  "We decided to use FastAPI. Redis lock failed — timeout under load."
+Session 2:  Agent already knows. Doesn't suggest Redis. Doesn't re-explain FastAPI.
+Session 10: Full institutional memory. New team members onboard in minutes.
 ```
 
-## vs Other Tools
+---
 
-| Feature | XCE | Augment Code | Serena | Graphify |
-|---------|-----|-------------|--------|----------|
-| Architecture awareness | ✅ Architecture→Component→Code | ❌ Flat embeddings | ❌ Symbol-level only | ✅ Knowledge graph |
-| Impact analysis | ✅ Predicts blast radius | ❌ | ❌ | ❌ |
-| Call graph traversal | ✅ Full chain | ❌ | ✅ LSP-based | ❌ |
-| Semantic search | ✅ Embeddings + graph | ✅ Embeddings | ❌ | ✅ |
-| MCP native | ✅ | ✅ | ✅ | ✅ (--mcp) |
-| Multi-language | ✅ 13 languages | ✅ | ✅ | ✅ |
-| Self-hosted | ✅ | ❌ Cloud only | ✅ | ✅ |
-| SWE-bench verified | 78.2% | Not published | Not published | Not published |
+## Three memory layers
 
-## MCP Tools
+```
+┌─────────────────┐   ┌──────────────────┐   ┌──────────────────────┐
+│  EPISODIC        │   │  FACTS (Graph)    │   │  WORKING CONTEXT      │
+│                  │   │                   │   │                       │
+│  Full session    │   │  Decisions        │   │  Current task         │
+│  transcripts     │   │  Attempts         │   │  Recent decisions     │
+│  verbatim        │   │  Preferences      │   │  Next steps           │
+│                  │   │  Conventions      │   │  Open questions       │
+│  OpenSearch      │   │  Entities         │   │                       │
+│  + SQLite FTS5   │   │  Neo4j            │   │  SQLite UPSERT        │
+│  (fallback)      │   │  + vector dedup   │   │  per (project, user)  │
+└─────────────────┘   └──────────────────┘   └──────────────────────┘
+```
 
-| Tool | Description |
+**Episodic** — raw session transcripts, full-text searchable. "What did we try last Tuesday?"
+
+**Facts** — structured knowledge extracted from sessions. Decisions, failed approaches, preferences, conventions. Vector-deduplicated so the same fact never gets stored twice. Graph-linked so related facts surface together.
+
+**Working Context** — the current state of a `(project, user)` pair. Always up-to-date via UPSERT. Injected into agent context at session start.
+
+---
+
+## Quickstart
+
+**Install:**
+```bash
+pip install xanther
+```
+
+**Install hooks** (Kiro + Claude Code):
+```bash
+xme hook install .
+```
+
+That's it. XME now auto-captures every session. No other setup needed.
+
+**Start a session manually:**
+```bash
+xme start my-project
+```
+
+**Search your memory:**
+```bash
+xme search my-project "why did we choose FastAPI"
+xme facts my-project --type decision
+```
+
+**Launch the dashboard:**
+```bash
+xme dashboard
+# Open http://localhost:8001
+```
+
+---
+
+## How it works
+
+**During a session**, two hooks fire silently:
+- `promptSubmit` — buffers your message to `.xanther/turns/`
+- `agentStop` — drains the buffer: extracts facts, updates context, saves episode
+
+**At the start of the next session**, the agent gets a context block like:
+
+```markdown
+**Current task**: Refactor auth module
+**Last session**: Moved JWT logic to dedicated auth service — success
+**Recent decisions**:
+- [VALIDATED] Use FastAPI for auth service — async support required
+- [VALIDATED] PostgreSQL for main DB — ACID compliance
+**Known failed approaches**:
+- Redis distributed lock — timeout under load >1000 req/s
+**Next steps**: Deploy auth service to staging
+```
+
+The agent starts informed. No re-explaining. No repeated mistakes.
+
+---
+
+## MCP tools
+
+Xanther exposes 11 memory tools via MCP, working alongside 5 code intelligence tools:
+
+| Tool | What it does |
 |------|-------------|
-| `xce_get_context` | Full architectural context for a problem. **Use first on any task.** |
-| `xce_search` | Semantic search — find code by meaning, not just text |
-| `xce_architecture_context` | Deep dive on a file/symbol — role, dependencies, callers |
-| `xce_impact_analysis` | Predict what breaks before you change files |
-| `xce_trace` | Trace from code up to high-level architecture |
+| `xme_session_start` | Start session, get primed context for prompt injection |
+| `xme_session_end` | End session: persist episode, extract facts, update context |
+| `xme_add` | Add content to memory — Mem0-style UPSERT with deduplication |
+| `xme_search` | Search across all 3 layers simultaneously |
+| `xme_get_context` | Get current working context for a project+user |
+| `xme_facts` | Query the fact graph — decisions, attempts, preferences |
+| `xme_episodes` | Search past sessions |
+| `xme_remember` | Explicitly store a typed fact |
+| `xme_forget` | Soft-delete a memory node |
+| `xme_export` | Export to Obsidian vault, wiki, or Graphify-compatible JSON |
+| `xme_context_update` | Partial UPSERT of working context fields |
 
-## Supported Languages
-
-| Language | Parser | Status |
-|----------|--------|--------|
-| Python | tree-sitter | ✅ Stable |
-| TypeScript | tree-sitter | ✅ Stable |
-| JavaScript | tree-sitter | ✅ Stable |
-| Java | tree-sitter | ✅ Stable |
-| Go | tree-sitter | ✅ Stable |
-| Rust | tree-sitter | ✅ Stable |
-| C# | tree-sitter | ✅ Stable |
-| C/C++ | tree-sitter | ✅ Stable |
-| Ruby | tree-sitter | ✅ Stable |
-| PHP | tree-sitter | ✅ Stable |
-| Kotlin | tree-sitter | ✅ Stable |
-| Swift | tree-sitter | ✅ Stable |
-| TSX/JSX | tree-sitter | ✅ Stable |
-
-## Setup
-
-### Prerequisites
-
-- Python 3.12+
-- Docker (for Neo4j)
-- An LLM API key (OpenRouter, OpenAI, or Anthropic) for documentation generation
-
-### Install
-
-```bash
-git clone https://github.com/Xanther-Ai/xanther-context-engine.git
-cd xanther-context-engine
-pip install -e .
-```
-
-### Start Neo4j
-
-```bash
-docker compose up neo4j -d
-```
-
-### Configure
-
-```bash
-cp .env.example .env
-# Edit .env — add your LLM API key (OpenRouter recommended)
-```
-
-### Index a Repository
-
-```bash
-python -m xce.indexer /path/to/your/repo
-```
-
-This takes 2-10 minutes depending on repo size. Progress is logged.
-
-### Start MCP Server (Local — stdio)
-
-```bash
-python -m xce.mcp_server
-```
-
-### Start MCP Server (Remote — SSE)
-
-```bash
-python -m xce.mcp_server --sse --port 8000
-```
-
-### Connect Your IDE
-
-Add to your IDE's MCP config:
-
+Add to your MCP config:
 ```json
 {
   "mcpServers": {
-    "xanther-xce": {
-      "command": "python",
-      "args": ["-m", "xce.mcp_server"],
-      "cwd": "/path/to/xanther-context-engine"
+    "xanther": {
+      "command": "xce-mcp-server",
+      "env": {
+        "NEO4J_URI": "bolt://localhost:7687",
+        "NEO4J_PASSWORD": "your-password"
+      }
     }
   }
 }
 ```
 
-Or for remote SSE:
+---
 
-```json
-{
-  "mcpServers": {
-    "xanther-xce": {
-      "url": "http://localhost:8000/sse?repo_id=YOUR_REPO_ID"
-    }
-  }
-}
+## Deduplication
+
+Facts are stored once, not repeated. When you add new content, Xanther:
+
+1. Embeds it using `all-MiniLM-L6-v2` (local, no API key)
+2. Searches for similar existing facts (cosine similarity)
+3. If similarity > 0.85: **merges** the new info into the existing fact
+4. If no match: creates a new fact node
+
+```
+Session 3: "we use FastAPI"        → merges with existing FastAPI decision (sim=0.93)
+Session 7: "decided on FastAPI"    → merges again (sim=0.91)
+Session 15: "PostgreSQL migration" → new fact (sim=0.12 vs FastAPI)
 ```
 
-Works with: Claude Code, Kiro, Cursor, Windsurf, OpenCode, Cline.
+Your fact graph stays clean even across dozens of sessions.
 
-## Docker (Full Stack)
+---
+
+## Multi-user, multi-project
+
+Every memory operation is scoped to `(project_id, user_id)`:
+
+- **Team scope** — decisions, attempts, conventions are shared across users in a project
+- **Personal scope** — sessions, preferences are per-user
 
 ```bash
-docker compose up
+xme search payments-api "auth decisions"          # search team memory
+xme facts payments-api --type decision            # list team decisions
+xme facts payments-api --type preference --user raj  # personal preferences
 ```
 
-This starts Neo4j + XCE MCP server. Index a repo, then connect your agent.
+---
 
-## Benchmark Results
+## Export formats
 
-All on [SWE-bench Verified](https://www.swebench.com/) (500 instances) using mini-swe-agent:
+**Obsidian vault:**
+```bash
+xme export my-project --format obsidian
+# → .xanther/obsidian/  (open as Obsidian vault)
+```
 
-| Setup | Resolve Rate | Cost/Instance |
-|-------|-------------|---------------|
-| **MiniMax M2.5 + XCE** | **78.2%** | $0.22 |
-| Claude 4.5 Opus (baseline) | 76.8% | $0.75 |
-| MiniMax M2.5 (baseline) | 75.8% | $0.07 |
-| **Sonnet 4.0 + XCE** | **73.4%** | $0.22 |
-| Sonnet 4.0 (baseline) | 66.0% | $0.22 |
+**Agent-navigable wiki:**
+```bash
+xme export my-project --format wiki
+# → .xanther/wiki/index.md + article per concept
+```
 
-Full data: [github.com/Xanther-Ai/xce-benchmarks](https://github.com/Xanther-Ai/xce-benchmarks)
+**Graphify-compatible:**
+```bash
+xme export my-project --format graphify
+# → .xanther/graphify-out/graph.json + GRAPH_REPORT.md
+```
+
+---
+
+## Storage backends
+
+| Backend | What it stores | Required? |
+|---------|---------------|-----------|
+| SQLite | Context layer + fact fallback + episodic fallback | Always (built-in) |
+| Neo4j | Fact graph with vector search | Recommended |
+| OpenSearch | Episodic full-text + semantic search | Optional |
+
+**Zero-infrastructure mode** (SQLite only):
+```bash
+XME_FALLBACK_MODE=true xme start my-project
+```
+
+**Full mode** (Neo4j + OpenSearch via Docker):
+```bash
+docker-compose up -d
+xme start my-project
+```
+
+---
+
+## Comparison
+
+| Feature | Graphify | Mem0 | Zep | **Xanther XME** |
+|---------|----------|------|-----|-----------------|
+| Code knowledge graph | ✅ | ❌ | ❌ | ✅ (via XCE) |
+| Session memory | ❌ | ✅ | ✅ | ✅ |
+| Fact graph | ❌ | partial | ✅ | ✅ |
+| Working context UPSERT | ❌ | ❌ | ❌ | ✅ |
+| Multi-user scoping | ❌ | ✅ | ✅ | ✅ |
+| Deduplication | ❌ | ✅ | ✅ | ✅ |
+| Local-first / self-hosted | ✅ | ❌ | ❌ | ✅ |
+| No pre-indexing required | ✅ | ✅ | ✅ | ✅ |
+| Obsidian export | ✅ | ❌ | ❌ | ✅ |
+| Dashboard UI | graph.html | ❌ | ✅ | ✅ |
+| MCP tools | 1 | ❌ | ❌ | 11 |
+| Open source | ✅ | partial | ❌ | ✅ |
+
+---
 
 ## Architecture
 
 ```
-xce/
-├── indexer.py          # Orchestrates the full indexing pipeline
-├── parser.py           # Multi-language AST parsing (tree-sitter)
-├── parsers/            # Language-specific parsers (13 languages)
-├── graph_store.py      # Neo4j graph operations
-├── embedding_service.py # Vector embeddings via OpenRouter/OpenAI
-├── doc_generator.py    # LLM-powered documentation generation
-├── mcp_server.py       # MCP server (stdio + SSE)
-├── models.py           # Data models (ASTNode, NodeKind, etc.)
-├── summarizer.py       # Code summarization
-├── config.py           # Configuration management
-└── agents.py           # LangGraph agents for complex queries
+xme/
+├── engine.py          # MemoryEngine — single entry point
+├── models.py          # Episode, Fact, WorkingContext, Turn
+├── config.py          # XMESettings (env-based)
+├── layers/
+│   ├── episodic.py    # OpenSearch + SQLite FTS5 fallback
+│   ├── facts.py       # Neo4j + vector dedup + SQLite fallback
+│   └── context.py     # SQLite UPSERT per (project, user)
+├── extraction/
+│   ├── embedder.py    # all-MiniLM-L6-v2 (local, no API key)
+│   └── extractor.py   # LLM or regex fact extraction
+├── server/
+│   ├── mcp_tools.py   # 11 MCP tools
+│   └── dashboard.py   # FastAPI dashboard (port 8001)
+├── export/
+│   ├── obsidian.py
+│   ├── wiki.py
+│   └── graphify_compat.py
+└── hooks/
+    ├── installer.py   # xme hook install
+    └── handler.py     # hook entrypoint (zero imports, <20ms)
 ```
 
-## Hosted Version
+XCE (Xanther Context Engine) — code graph intelligence — lives alongside XME in the same package. When XCE has indexed your codebase, facts automatically link to the relevant AST nodes, enabling queries like "which decisions affected the auth module?" XME works without XCE.
 
-Don't want to self-host? Use the hosted version at [app.xanther.ai](https://app.xanther.ai):
-- Free tier: 100 queries/month, 3 repos
-- No infrastructure to manage
-- Same engine, cloud-hosted
+---
+
+## Configuration
+
+All configuration via environment variables:
+
+```bash
+# Storage
+XME_SQLITE_PATH=.xanther/xme.db       # default
+XME_OPENSEARCH_URL=http://localhost:9200
+XME_FALLBACK_MODE=false                # true = SQLite only
+
+# Embedding
+XME_EMBEDDING_MODEL=all-MiniLM-L6-v2  # local model
+XME_DEDUP_THRESHOLD=0.85               # similarity threshold for merging facts
+
+# LLM extraction (optional — better fact quality)
+OPENROUTER_API_KEY=sk-...
+XME_LLM_MODEL=openai/gpt-4o-mini
+
+# Neo4j (shared with XCE)
+NEO4J_URI=bolt://localhost:7687
+NEO4J_PASSWORD=your-password
+```
+
+---
+
+## CLI reference
+
+```bash
+xme start <project_id>               # init + show stats
+xme add <project_id> <user> <text>   # add content to memory
+xme search <project_id> <query>      # search all layers
+xme facts <project_id>               # list facts
+xme stats <project_id>               # memory health
+xme export <project_id>              # export (obsidian/wiki/graphify)
+xme dashboard                        # launch web UI (port 8001)
+xme hook install [path]              # install Kiro + Claude Code hooks
+xme hook uninstall [path]            # remove hooks
+```
+
+---
 
 ## Contributing
 
-See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
+Xanther is open source under the Apache 2.0 license. Contributions welcome.
 
-1. Fork the repo
-2. Create a feature branch
-3. Submit a PR
+The most useful contributions:
+- **Real-world sessions** — run XME on your project, share what facts got extracted (and what got missed)
+- **Extraction improvements** — better regex patterns or LLM prompts for fact extraction
+- **New exporters** — Notion, Linear, Confluence
+- **Language support** — more tree-sitter parsers for XCE
 
-Join [Discord](https://discord.com/invite/p27qtGkTYw) for discussion.
+See [CONTRIBUTING.md](CONTRIBUTING.md) for setup instructions.
 
-## Links
-
-- [Website](https://xanther.ai)
-- [Dashboard](https://app.xanther.ai)
-- [Discord](https://discord.com/invite/p27qtGkTYw)
-- [npm: xanther-cli](https://www.npmjs.com/package/xanther-cli)
-- [Blog](https://medium.com/@xanther.ai)
-- [Benchmarks](https://github.com/Xanther-Ai/xce-benchmarks)
-- [Memory Engine](https://github.com/Xanther-Ai/xanther-memory-engine)
+---
 
 ## License
 
-MIT — see [LICENSE](LICENSE) for details.
+Apache 2.0. See [LICENSE](LICENSE).

@@ -1,5 +1,9 @@
 """Server subpackage — MCP protocol server."""
 
-from xce.server.mcp_server import XCEMCPServer
+try:
+    from xce.server.mcp_server import XCEMCPServer
+    __all__ = ["XCEMCPServer"]
+except ImportError:
+    # MCP package not installed
+    __all__ = []
 
-__all__ = ["XCEMCPServer"]

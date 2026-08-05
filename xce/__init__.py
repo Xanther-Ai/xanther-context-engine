@@ -17,7 +17,11 @@ from xce.query.agents import (
 from xce.query.decomposition import ProblemDecompositionAgent as ProblemDecompositionAgent
 from xce.query.reasoning import ReasoningChainBuilder as ReasoningChainBuilder
 from xce.query.refinement import RefinementLoop as RefinementLoop
-from xce.server.mcp_server import XCEMCPServer as XCEMCPServer
+try:
+    from xce.server.mcp_server import XCEMCPServer as XCEMCPServer
+except ImportError:
+    # MCP package not installed, skip this import
+    XCEMCPServer = None  # type: ignore
 from xce.utils.circuit_breaker import (
     CircuitBreaker as CircuitBreaker,
     CircuitBreakerOpenError as CircuitBreakerOpenError,

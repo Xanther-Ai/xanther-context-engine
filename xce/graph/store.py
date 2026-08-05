@@ -383,7 +383,7 @@ class GraphStore:
         """
         if relation:
             rel_type = _RELATION_MAP.get(relation, relation.upper())
-            rel_pattern = f"[*1..{depth}:{rel_type}]"
+            rel_pattern = f"[:{rel_type}*1..{depth}]"
         else:
             rel_pattern = f"[*1..{depth}]"
 
@@ -406,3 +406,332 @@ class GraphStore:
             )
             for r in records
         ]
+
+    # ------------------------------------------------------------------
+    # 3.9  list_repositories
+    # ------------------------------------------------------------------
+
+    async def list_repositories(self) -> list[dict[str, Any]]:
+        """List all indexed repositories with their statistics."""
+        cypher = """
+        MATCH (n:ASTNode)
+        OPTIONAL MATCH (n)-[r]->(m:ASTNode)
+        WITH n.repo_id AS repo_id, count(DISTINCT n) AS node_count, count(DISTINCT r) AS edge_count
+        OPTIONAL MATCH (n2:ASTNode {repo_id: repo_id})
+        WHERE n2.last_indexed IS NOT NULL
+        WITH repo_id, node_count, edge_count, max(n2.last_indexed) AS last_indexed
+        RETURN repo_id, node_count, edge_count, last_indexed
+        ORDER BY last_indexed DESC
+        """
+
+        async with self._driver.session() as session:
+            result = await session.run(cypher)
+            records = [dict(r) async for r in result]
+
+        return records
+
+    # ------------------------------------------------------------------
+    # 3.10  get_callers - Find nodes that call this symbol (up the call stack)
+    # ------------------------------------------------------------------
+
+    async def get_callers(
+        self,
+        symbol_id: str,
+        depth: int = 1,
+    ) -> list[dict[str, Any]]:
+        """Find all callers of a symbol up the call stack.
+        
+        Args:
+            symbol_id: The ID of the symbol to find callers for
+            depth: Maximum depth to traverse (1-5)
+            
+        Returns:
+            List of caller nodes with their properties
+        """
+        depth = max(1, min(depth, 5))  # Clamp depth between 1 and 5
+        
+        # Use string interpolation for depth (Cypher doesn't support params in MATCH patterns)
+        # Simplified query without the problematic relationships() call
+        cypher = f"""
+        MATCH (caller:ASTNode)-[:CALLS*1..{depth}]->(target:ASTNode {{id: $symbol_id}})
+        WHERE caller.id <> target.id
+        RETURN DISTINCT 
+            caller.id AS node_id, 
+            caller.name AS name, 
+            caller.kind AS kind,
+            caller.filepath AS filepath,
+            caller.start_line AS start_line,
+            caller.end_line AS end_line,
+            {depth} AS call_depth
+        ORDER BY caller.name
+        """
+        
+        async with self._driver.session() as session:
+            result = await session.run(cypher, {"symbol_id": symbol_id, "depth": depth})
+            records = [dict(r) async for r in result]
+        
+        return records
+
+    # ------------------------------------------------------------------
+    # 3.11  get_callees - Find nodes this symbol calls (down the call stack)
+    # ------------------------------------------------------------------
+
+    async def get_callees(
+        self,
+        symbol_id: str,
+        depth: int = 1,
+    ) -> list[dict[str, Any]]:
+        """Find all callees of a symbol down the call stack.
+        
+        Args:
+            symbol_id: The ID of the symbol to find callees for
+            depth: Maximum depth to traverse (1-5)
+            
+        Returns:
+            List of callee nodes with their properties
+        """
+        depth = max(1, min(depth, 5))  # Clamp depth between 1 and 5
+        
+        # Use string interpolation for depth (Cypher doesn't support params in MATCH patterns)
+        # Simplified query without the problematic relationships() call
+        cypher = f"""
+        MATCH (source:ASTNode {{id: $symbol_id}})-[:CALLS*1..{depth}]->(callee:ASTNode)
+        WHERE source.id <> callee.id
+        RETURN DISTINCT 
+            callee.id AS node_id, 
+            callee.name AS name, 
+            callee.kind AS kind,
+            callee.filepath AS filepath,
+            callee.start_line AS start_line,
+            callee.end_line AS end_line,
+            {depth} AS call_depth
+        ORDER BY callee.name
+        """
+        
+        async with self._driver.session() as session:
+            result = await session.run(cypher, {"symbol_id": symbol_id, "depth": depth})
+            records = [dict(r) async for r in result]
+        
+        return records
+
+    # ------------------------------------------------------------------
+    # 3.12  get_impact_analysis - Calculate risk and find affected files
+    # ------------------------------------------------------------------
+
+    async def get_impact_analysis(
+        self,
+        symbol_id: str,
+    ) -> dict[str, Any]:
+        """Analyze the impact of changes to a symbol.
+        
+        Calculates risk score based on fan-in (callers) and identifies:
+        - Direct dependents
+        - Test files that exercise this symbol
+        
+        Args:
+            symbol_id: The ID of the symbol to analyze
+            
+        Returns:
+            Dictionary with risk_score, direct_dependents, test_files, propagation_depth
+        """
+        # Get callers at various depths for fan-in calculation
+        callers_1 = await self.get_callers(symbol_id, depth=1)
+        callers_2 = await self.get_callers(symbol_id, depth=2)
+        callers_3 = await self.get_callers(symbol_id, depth=3)
+        
+        # Get callees for propagation depth
+        callees_1 = await self.get_callees(symbol_id, depth=1)
+        
+        # Determine propagation depth (how far down the call chain)
+        propagation_depth = 0
+        if callees_1:
+            propagation_depth = 1
+            # Check deeper levels
+            callees_2 = await self.get_callees(symbol_id, depth=2)
+            if callees_2:
+                propagation_depth = 2
+                callees_3 = await self.get_callees(symbol_id, depth=3)
+                if callees_3:
+                    propagation_depth = 3
+        
+        # Calculate fan-in (number of direct callers)
+        direct_callers_count = len(callers_1)
+        total_callers = len(callers_1) + len(callers_2) + len(callers_3)
+        
+        # Calculate fan-out (number of direct callees)
+        direct_callees_count = len(callees_1)
+        
+        # Risk score: higher when many things depend on this symbol
+        # Normalized to 0-1 range
+        risk_score = min(1.0, direct_callers_count * 0.1 + total_callers * 0.02)
+        
+        # Calculate total callers count for return
+        total_callers_count = total_callers
+        
+        # Find test files - look for test-related paths
+        all_dependents = callers_1 + callers_2 + callers_3
+        test_files = [
+            {
+                "node_id": d["node_id"],
+                "name": d["name"],
+                "filepath": d["filepath"],
+                "kind": d["kind"]
+            }
+            for d in all_dependents
+            if d.get("filepath") and any(
+                test_pattern in d["filepath"].lower() 
+                for test_pattern in ["test", "spec", "__tests__", ".test.", ".spec."]
+            )
+        ]
+        
+        # Direct dependents (excluding test files)
+        test_file_node_ids = {d["node_id"] for d in test_files}
+        direct_dependents = [
+            {
+                "node_id": d["node_id"],
+                "name": d["name"],
+                "filepath": d["filepath"],
+                "kind": d["kind"]
+            }
+            for d in callers_1
+            if d["node_id"] not in test_file_node_ids and d.get("filepath") and not any(
+                test_pattern in d["filepath"].lower()
+                for test_pattern in ["test", "spec", "__tests__", ".test.", ".spec."]
+            )
+        ]
+        
+        return {
+            "symbol_id": symbol_id,
+            "risk_score": round(risk_score, 2),
+            "direct_callers_count": direct_callers_count,
+            "total_callers_count": total_callers_count,
+            "direct_callees_count": direct_callees_count,
+            "propagation_depth": propagation_depth,
+            "direct_dependents": direct_dependents[:20],  # Limit to 20
+            "test_files": test_files[:20],  # Limit to 20
+            "all_callers": [
+                {
+                    "node_id": d["node_id"],
+                    "name": d["name"],
+                    "filepath": d["filepath"],
+                    "kind": d["kind"],
+                    "depth": d.get("call_depth", 1)
+                }
+                for d in callers_1 + callers_2 + callers_3
+            ][:50]  # Limit total
+        }
+
+    # ------------------------------------------------------------------
+    # 3.13  get_traceability - Get requirement links
+    # ------------------------------------------------------------------
+
+    async def get_traceability(
+        self,
+        symbol_id: str,
+    ) -> dict[str, Any]:
+        """Get traceability links for a symbol.
+        
+        Finds:
+        - DESCRIBED_BY edges: ComponentDescription nodes
+        - DETAILED_IN edges: ComponentDoc nodes  
+        - PART_OF_ARCHITECTURE edges: ArchitectureDoc nodes
+        
+        Args:
+            symbol_id: The ID of the symbol to trace
+            
+        Returns:
+            Dictionary with requirement_links, test_coverage, architecture_context
+        """
+        cypher_describes = """
+        MATCH (a:ASTNode {id: $symbol_id})-[r:DESCRIBED_BY]->(d:ComponentDesc)
+        RETURN d.summary AS summary, d.responsibilities AS responsibilities, 
+               d.dependencies AS dependencies, type(r) AS edge_type
+        """
+        
+        cypher_detail = """
+        MATCH (a:ASTNode {id: $symbol_id})-[:DESCRIBED_BY]->(d:ComponentDesc)-[r:DETAILED_IN]->(doc:ComponentDoc)
+        RETURN doc.algorithm_description AS algorithm, doc.data_flow AS data_flow,
+               doc.error_handling AS error_handling, doc.edge_cases AS edge_cases,
+               type(r) AS edge_type
+        """
+        
+        cypher_arch = """
+        MATCH (a:ASTNode {id: $symbol_id})-[r:PART_OF_ARCHITECTURE]->(h:ArchitectureDoc)
+        RETURN h.architectural_role AS role, h.design_patterns AS patterns,
+               h.integration_points AS integrations, h.quality_attributes AS quality,
+               h.module_path AS module_path, type(r) AS edge_type
+        """
+        
+        async with self._driver.session() as session:
+            # Get DESCRIBED_BY links
+            result = await session.run(cypher_describes, {"symbol_id": symbol_id})
+            described_by = [dict(r) async for r in result]
+            
+            # Get DETAILED_IN links
+            result = await session.run(cypher_detail, {"symbol_id": symbol_id})
+            detailed_in = [dict(r) async for r in result]
+            
+            # Get PART_OF_ARCHITECTURE links
+            result = await session.run(cypher_arch, {"symbol_id": symbol_id})
+            part_of_arch = [dict(r) async for r in result]
+        
+        requirement_links = []
+        for desc in described_by:
+            requirement_links.append({
+                "type": "ComponentDescription",
+                "summary": desc.get("summary", ""),
+                "responsibilities": desc.get("responsibilities", []),
+                "dependencies": desc.get("dependencies", []),
+                "edge_type": desc.get("edge_type", "DESCRIBED_BY")
+            })
+        
+        for detail in detailed_in:
+            requirement_links.append({
+                "type": "ComponentDoc",
+                "algorithm_description": detail.get("algorithm", ""),
+                "data_flow": detail.get("data_flow", ""),
+                "error_handling": detail.get("error_handling", ""),
+                "edge_cases": detail.get("edge_cases", []),
+                "edge_type": detail.get("edge_type", "DETAILED_IN")
+            })
+        
+        architecture_context = []
+        for arch in part_of_arch:
+            architecture_context.append({
+                "module_path": arch.get("module_path", ""),
+                "architectural_role": arch.get("role", ""),
+                "design_patterns": arch.get("patterns", []),
+                "integration_points": arch.get("integrations", []),
+                "quality_attributes": arch.get("quality", []),
+                "edge_type": arch.get("edge_type", "PART_OF_ARCHITECTURE")
+            })
+        
+        # Check for test coverage (test files that import or reference this symbol)
+        cypher_tests = """
+        MATCH (test:ASTNode)-[:CALLS|IMPORTS]->(target:ASTNode {id: $symbol_id})
+        WHERE test.name CONTAINS 'test' OR test.name CONTAINS 'spec' 
+              OR test.filepath CONTAINS 'test' OR test.filepath CONTAINS 'spec'
+        RETURN DISTINCT test.id AS node_id, test.name AS name, test.filepath AS filepath
+        LIMIT 20
+        """
+        
+        async with self._driver.session() as session:
+            result = await session.run(cypher_tests, {"symbol_id": symbol_id})
+            test_coverage = [dict(r) async for r in result]
+        
+        return {
+            "symbol_id": symbol_id,
+            "requirement_links": requirement_links,
+            "test_coverage": [
+                {
+                    "node_id": t["node_id"],
+                    "name": t["name"],
+                    "filepath": t["filepath"]
+                }
+                for t in test_coverage
+            ],
+            "architecture_context": architecture_context,
+            "has_documentation": len(requirement_links) > 0,
+            "has_test_coverage": len(test_coverage) > 0,
+            "has_architecture_context": len(architecture_context) > 0
+        }
