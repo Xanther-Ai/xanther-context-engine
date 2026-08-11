@@ -64,6 +64,9 @@ class XMEConfig:
 
     XME is fully local-first and open source.
     All memory is stored in <repo>/.xanther/memory/ by default.
+
+    XCE → XME bridge settings control whether indexed code facts are
+    automatically synced into XME after each index run.
     """
     # Storage
     memory_dir: str = field(
@@ -92,6 +95,19 @@ class XMEConfig:
     # Behaviour
     auto_capture_sessions: bool = field(
         default_factory=lambda: _env("XME_AUTO_CAPTURE", "false").lower() == "true"
+    )
+
+    # XCE → XME bridge: sync indexed code facts into XME memory layers
+    bridge_enabled: bool = field(
+        default_factory=lambda: _env("XME_BRIDGE_ENABLED", "false").lower() == "true"
+    )
+    # Path to XME SQLite db for episodic store (code file episodes)
+    bridge_db_path: str = field(
+        default_factory=lambda: _env("XME_BRIDGE_DB_PATH", ".xanther/xme.db")
+    )
+    # OpenSearch URL for episodic store (optional — falls back to SQLite)
+    bridge_opensearch_url: str = field(
+        default_factory=lambda: _env("XME_BRIDGE_OPENSEARCH_URL", "")
     )
 
 

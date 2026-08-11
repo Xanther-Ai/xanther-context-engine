@@ -319,6 +319,35 @@ async def index_repository(
         "Indexed %d nodes, %d edges, %d docs, %d embeddings",
         result.nodes_count, result.edges_count, result.docs_count, result.embeddings_count,
     )
+
+    # XME Bridge: sync indexed facts + episodes into XME memory layers
+    # Enabled via XME_BRIDGE_ENABLED=true in .env
+    try:
+        import os as _os
+        if _os.environ.get("XME_BRIDGE_ENABLED", "").lower() == "true":
+            from xce.memory.xme_bridge import XMEBridge
+            from datetime import datetime, timezone
+            bridge = XMEBridge(
+                xme_db_path=_os.environ.get("XME_BRIDGE_DB_PATH", ".xanther/xme.db"),
+                neo4j_driver=graph_store._driver,
+                opensearch_url=_os.environ.get("XME_BRIDGE_OPENSEARCH_URL") or None,
+            )
+            bridge_result = await bridge.sync_index(
+                repo_id=repo_id,
+                nodes=all_nodes,
+                edges=all_edges,
+                descriptions=all_descs,
+                user_id=_os.environ.get("XME_BRIDGE_USER_ID", "xce_agent"),
+                index_date=datetime.now(timezone.utc).isoformat(),
+            )
+            await bridge.close()
+            logger.info(
+                "XME bridge: %d facts + %d episodes synced",
+                bridge_result["facts_written"], bridge_result["episodes_written"],
+            )
+    except Exception as _e:
+        logger.debug("XME bridge sync skipped: %s", _e)
+
     return result, current_hashes
 
 

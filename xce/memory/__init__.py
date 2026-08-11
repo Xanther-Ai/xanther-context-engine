@@ -29,6 +29,8 @@ from xce.memory.cache import XMECache
 from xce.memory.sync import MemorySyncer
 from xce.memory.journal import ChatJournal, CompactionResult
 from xce.memory.lifecycle import SessionContext, JournalingMiddleware, generate_xme_steering
+from xce.memory.xme_bridge import XMEBridge
+from xce.memory.code_memory import CodeMemory
 
 __all__ = [
     "MemoryScope",
@@ -46,4 +48,7 @@ __all__ = [
     "SessionContext",
     "JournalingMiddleware",
     "generate_xme_steering",
+    # XCE → XME bridge + coding agent query interface
+    "XMEBridge",
+    "CodeMemory",
 ]
