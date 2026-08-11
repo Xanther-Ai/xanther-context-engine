@@ -54,14 +54,25 @@ async def cmd_index(args: argparse.Namespace) -> None:
     postgres_uri = os.environ.get("POSTGRES_URI", "")
 
     print(f"Indexing {repo_path} as '{repo_id}'...")
+    print(f"  Mode:      {args.mode}")
     print(f"  Neo4j:     {settings.neo4j.uri}")
     print(f"  Embedding: {settings.embedding.model} ({settings.embedding.dimensions}d)")
     if postgres_uri:
         print(f"  Postgres:  {postgres_uri.split('@')[-1]}")  # hide credentials
-    print(f"  Mode:      {'full' if args.full else 'incremental'}")
-    if args.smart_docs:
-        print(f"  Docs:      smart (classes + functions >= 10 lines only)")
+    print(f"  Incremental: {'full' if args.full else 'yes'}")
+    print(f"  Smart docs: {'yes (default)' if args.smart_docs else 'no (all nodes)'}")
     print()
+
+    # Mode: xme = fast facts-only, xce = code graph only, full = both
+    mode = getattr(args, "mode", "full")
+    run_xce_layers = mode in ("xce", "full")
+    run_xme_bridge = mode in ("xme", "full")
+
+    # xme-only mode: skip LLM doc generation entirely
+    if mode == "xme":
+        print("  XME-only mode: AST parse + XME sync (no LLM doc generation)")
+        print("  Tip: fastest option — use for quick memory indexing without deep code analysis")
+        print()
 
     graph_store = GraphStore(
         neo4j_uri=settings.neo4j.uri,
@@ -95,12 +106,22 @@ async def cmd_index(args: argparse.Namespace) -> None:
         )
 
         import time
+        import os as _os
         start = time.time()
+
+        # XME bridge: set env var before index call so the bridge hook inside picks it up
+        if run_xme_bridge:
+            _os.environ["XME_BRIDGE_ENABLED"] = "true"
+        else:
+            _os.environ["XME_BRIDGE_ENABLED"] = "false"
+
+        # xme-only: skip LLM doc gen by using a no-op doc_generator
+        active_doc_gen = doc_generator if run_xce_layers else None
 
         result, _ = await index_repository(
             str(repo_path),
             repo_id,
-            doc_generator=doc_generator,
+            doc_generator=active_doc_gen,
             embedding_service=embedding_service,
             graph_store=graph_store,
             hash_store=hash_store,
@@ -396,13 +417,31 @@ def build_parser() -> argparse.ArgumentParser:
         help="Force full re-index (skip incremental)",
     )
     index_parser.add_argument(
+        "--mode",
+        choices=["xme", "xce", "full"],
+        default="full",
+        help=(
+            "Indexing mode:\n"
+            "  xme  — memory only: fast AST parse + XME fact/episode sync, no LLM docs\n"
+            "  xce  — code graph only: full 4-layer XCE indexing, no XME sync\n"
+            "  full — XCE + XME: index everything and sync to XME (default)"
+        ),
+    )
+    index_parser.add_argument(
         "--smart-docs",
         action="store_true",
+        default=True,
         help=(
             "Only generate LLM docs for classes and functions/methods >= 10 lines. "
-            "Skips variables, imports, decorators, and trivial functions. "
-            "Reduces cost ~80%% with minimal quality loss."
+            "Skips trivial nodes. Reduces LLM cost ~80%% with minimal quality loss. "
+            "(ON by default — use --no-smart-docs to disable)"
         ),
+    )
+    index_parser.add_argument(
+        "--no-smart-docs",
+        dest="smart_docs",
+        action="store_false",
+        help="Disable smart filtering — generate docs for all nodes (slower, more expensive).",
     )
 
     # --- serve ---

@@ -130,7 +130,7 @@ async def index_repository(
     graph_store: GraphStore,
     hash_store: Optional["HashStore"] = None,
     incremental: bool = True,
-    smart_docs: bool = False,
+    smart_docs: bool = False,  # Default False for backward compat; CLI uses True by default
 ) -> tuple[IndexResult, dict[str, str]]:
     """Orchestrate the full multi-layer indexing pipeline.
 
@@ -258,29 +258,29 @@ async def index_repository(
             except Exception as e:
                 logger.warning(f"Doc generation failed for batch: {e}")
 
-    # Generate ComponentDoc for functions/methods
-    # Build source text lookup for generate_component_doc
+    # Generate ComponentDoc for functions/methods (Layer 3) — skip if no doc_generator
     source_by_id = {n.id: n.source_text or "" for n in all_nodes}
-    
     desc_map = {d.node_id: d for d in all_descs}
-    func_nodes = [n for n in all_nodes if n.kind in (NodeKind.FUNCTION, NodeKind.METHOD)]
-    for node in func_nodes:
-        desc = desc_map.get(node.id)
-        if desc:
-            component_doc = await doc_generator.generate_component_doc(desc, source_by_id.get(node.id, ""))
-            if component_doc:
-                await graph_store.upsert_documentation([component_doc])
-                result.docs_count += 1
+    if doc_generator is not None:
+        func_nodes = [n for n in all_nodes if n.kind in (NodeKind.FUNCTION, NodeKind.METHOD)]
+        for node in func_nodes:
+            desc = desc_map.get(node.id)
+            if desc:
+                component_doc = await doc_generator.generate_component_doc(desc, source_by_id.get(node.id, ""))
+                if component_doc:
+                    await graph_store.upsert_documentation([component_doc])
+                    result.docs_count += 1
 
-    # Step 6: Generate ArchitectureDoc per module
+    # Step 6: Generate ArchitectureDoc per module (Layer 4) — skip if no doc_generator
     modules = group_by_module(all_nodes)
-    for module_path, module_nodes in modules.items():
-        module_descs = [desc_map[n.id] for n in module_nodes if n.id in desc_map]
-        if module_descs:
-            arch_doc = await doc_generator.generate_architecture_doc(module_path, module_descs)
-            if arch_doc:
-                await graph_store.upsert_documentation([arch_doc])
-                result.docs_count += 1
+    if doc_generator is not None:
+        for module_path, module_nodes in modules.items():
+            module_descs = [desc_map[n.id] for n in module_nodes if n.id in desc_map]
+            if module_descs:
+                arch_doc = await doc_generator.generate_architecture_doc(module_path, module_descs)
+                if arch_doc:
+                    await graph_store.upsert_documentation([arch_doc])
+                    result.docs_count += 1
 
     result.docs_count += len(all_descs)
 
