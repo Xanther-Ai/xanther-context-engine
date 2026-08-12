@@ -112,12 +112,29 @@ class XMEConfig:
 
 
 @dataclass(frozen=True)
+class XCEConfig:
+    """XCE-specific settings that control which indexing layers run."""
+
+    # Layer 3: ComponentDoc (detailed per-function docs) — expensive, optional
+    # Disabled by default — modern LLMs can generate these on demand from source
+    deep_docs_enabled: bool = field(
+        default_factory=lambda: _env("XCE_DEEP_DOCS", "false").lower() == "true"
+    )
+    # Layer 4: ArchitectureDoc (module-level HLD) — expensive, optional
+    # Re-enable when you want pre-generated architecture context for large codebases
+    arch_docs_enabled: bool = field(
+        default_factory=lambda: _env("XCE_ARCH_DOCS", "false").lower() == "true"
+    )
+
+
+@dataclass(frozen=True)
 class Settings:
     neo4j: Neo4jConfig = field(default_factory=Neo4jConfig)
     embedding: EmbeddingConfig = field(default_factory=EmbeddingConfig)
     summarizer: SummarizerConfig = field(default_factory=SummarizerConfig)
     doc_gen: DocGenConfig = field(default_factory=DocGenConfig)
     xme: XMEConfig = field(default_factory=XMEConfig)
+    xce: XCEConfig = field(default_factory=XCEConfig)
     openrouter_api_key: str = field(default_factory=lambda: _env("OPENROUTER_API_KEY"))
     kimi_api_key: str = field(default_factory=lambda: _env("KIMI_API_KEY"))
     runpod_api_key: str = field(default_factory=lambda: _env("RUN_POD_API_KEY"))

@@ -259,9 +259,11 @@ async def index_repository(
                 logger.warning(f"Doc generation failed for batch: {e}")
 
     # Generate ComponentDoc for functions/methods (Layer 3) — skip if no doc_generator
+    # Disabled by default via XCE_DEEP_DOCS=false (expensive, modern LLMs do this on demand)
     source_by_id = {n.id: n.source_text or "" for n in all_nodes}
     desc_map = {d.node_id: d for d in all_descs}
-    if doc_generator is not None:
+    _deep_docs = os.environ.get("XCE_DEEP_DOCS", "false").lower() == "true"
+    if doc_generator is not None and _deep_docs:
         func_nodes = [n for n in all_nodes if n.kind in (NodeKind.FUNCTION, NodeKind.METHOD)]
         for node in func_nodes:
             desc = desc_map.get(node.id)
@@ -270,10 +272,14 @@ async def index_repository(
                 if component_doc:
                     await graph_store.upsert_documentation([component_doc])
                     result.docs_count += 1
+    elif doc_generator is not None and not _deep_docs:
+        logger.debug("Layer 3 (ComponentDoc) skipped — set XCE_DEEP_DOCS=true to enable")
 
     # Step 6: Generate ArchitectureDoc per module (Layer 4) — skip if no doc_generator
+    # Disabled by default via XCE_ARCH_DOCS=false (expensive, modern LLMs do this on demand)
     modules = group_by_module(all_nodes)
-    if doc_generator is not None:
+    _arch_docs = os.environ.get("XCE_ARCH_DOCS", "false").lower() == "true"
+    if doc_generator is not None and _arch_docs:
         for module_path, module_nodes in modules.items():
             module_descs = [desc_map[n.id] for n in module_nodes if n.id in desc_map]
             if module_descs:
@@ -281,6 +287,8 @@ async def index_repository(
                 if arch_doc:
                     await graph_store.upsert_documentation([arch_doc])
                     result.docs_count += 1
+    elif doc_generator is not None and not _arch_docs:
+        logger.debug("Layer 4 (ArchitectureDoc) skipped — set XCE_ARCH_DOCS=true to enable")
 
     result.docs_count += len(all_descs)
 
