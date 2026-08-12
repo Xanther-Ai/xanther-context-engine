@@ -258,11 +258,12 @@ async def index_repository(
             except Exception as e:
                 logger.warning(f"Doc generation failed for batch: {e}")
 
-    # Generate ComponentDoc for functions/methods (Layer 3) — skip if no doc_generator
-    # Disabled by default via XCE_DEEP_DOCS=false (expensive, modern LLMs do this on demand)
+    # Generate ComponentDoc for functions/methods (Layer 3)
+    # Enabled by default — pre-digested docs help smaller models understand code without reading source
+    # Disable with XCE_DEEP_DOCS=false if you only use frontier models (GPT-4o, Claude 3.5+)
     source_by_id = {n.id: n.source_text or "" for n in all_nodes}
     desc_map = {d.node_id: d for d in all_descs}
-    _deep_docs = os.environ.get("XCE_DEEP_DOCS", "false").lower() == "true"
+    _deep_docs = os.environ.get("XCE_DEEP_DOCS", "true").lower() == "true"
     if doc_generator is not None and _deep_docs:
         func_nodes = [n for n in all_nodes if n.kind in (NodeKind.FUNCTION, NodeKind.METHOD)]
         for node in func_nodes:
@@ -275,10 +276,11 @@ async def index_repository(
     elif doc_generator is not None and not _deep_docs:
         logger.debug("Layer 3 (ComponentDoc) skipped — set XCE_DEEP_DOCS=true to enable")
 
-    # Step 6: Generate ArchitectureDoc per module (Layer 4) — skip if no doc_generator
-    # Disabled by default via XCE_ARCH_DOCS=false (expensive, modern LLMs do this on demand)
+    # Step 6: Generate ArchitectureDoc per module (Layer 4)
+    # Enabled by default — pre-generated HLD context is critical for small models
+    # Disable with XCE_ARCH_DOCS=false if you only use frontier models
     modules = group_by_module(all_nodes)
-    _arch_docs = os.environ.get("XCE_ARCH_DOCS", "false").lower() == "true"
+    _arch_docs = os.environ.get("XCE_ARCH_DOCS", "true").lower() == "true"
     if doc_generator is not None and _arch_docs:
         for module_path, module_nodes in modules.items():
             module_descs = [desc_map[n.id] for n in module_nodes if n.id in desc_map]

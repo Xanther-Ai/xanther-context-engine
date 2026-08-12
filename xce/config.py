@@ -115,15 +115,17 @@ class XMEConfig:
 class XCEConfig:
     """XCE-specific settings that control which indexing layers run."""
 
-    # Layer 3: ComponentDoc (detailed per-function docs) — expensive, optional
-    # Disabled by default — modern LLMs can generate these on demand from source
+    # Layer 3: ComponentDoc (detailed per-function docs) — enabled by default
+    # Pre-generates algorithm descriptions, data flow, error handling for small model consumption
+    # Disable with XCE_DEEP_DOCS=false if you only use frontier models (GPT-4o, Claude 3.5+)
     deep_docs_enabled: bool = field(
-        default_factory=lambda: _env("XCE_DEEP_DOCS", "false").lower() == "true"
+        default_factory=lambda: _env("XCE_DEEP_DOCS", "true").lower() == "true"
     )
-    # Layer 4: ArchitectureDoc (module-level HLD) — expensive, optional
-    # Re-enable when you want pre-generated architecture context for large codebases
+    # Layer 4: ArchitectureDoc (module-level HLD) — enabled by default
+    # Pre-generates architectural role, design patterns, integration points per module
+    # Disable with XCE_ARCH_DOCS=false if you only use frontier models
     arch_docs_enabled: bool = field(
-        default_factory=lambda: _env("XCE_ARCH_DOCS", "false").lower() == "true"
+        default_factory=lambda: _env("XCE_ARCH_DOCS", "true").lower() == "true"
     )
 
 
