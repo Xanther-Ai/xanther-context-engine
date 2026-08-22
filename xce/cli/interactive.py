@@ -29,9 +29,7 @@ from pathlib import Path
 from typing import Optional
 
 from rich.console import Console
-from rich.live import Live
 from rich.panel import Panel
-from rich.progress import Progress, SpinnerColumn, BarColumn, TextColumn, TimeElapsedColumn
 from rich.table import Table
 from rich.text import Text
 
@@ -175,27 +173,16 @@ async def cmd_index_interactive(
     t_start = time.time()
 
     # Run indexing with progress updates
-    with Progress(
-        SpinnerColumn(),
-        TextColumn("[progress.description]{task.description}"),
-        BarColumn(),
-        TextColumn("[progress.percentage]{task.percentage:>3.0f}%"),
-        TimeElapsedColumn(),
-        console=console,
-    ) as progress:
-
-        main_task = progress.add_task("Indexing...", total=100)
-
-        # Phase 1: Parse (10%)
-        stages["parse"] = "running"
-        progress.update(main_task, description="Layer 1: Parsing AST...", completed=0)
-
+    with console.status("[bold green]Indexing...") as status:
+        # Phase 1: Connect + Parse
+        status.update("[bold yellow]Connecting to Neo4j...")
         graph_store = GraphStore(
             neo4j_uri=settings.neo4j.uri,
             neo4j_auth=settings.neo4j.auth,
             embedding_dimensions=settings.embedding.dimensions,
         )
         await graph_store.init_schema()
+        status.update("[bold yellow]✓ Neo4j connected")
 
         doc_gen = DocGenerator(api_key=settings.openrouter_api_key) if mode != "xme" else None
         embed_svc = EmbeddingService(
@@ -204,7 +191,13 @@ async def cmd_index_interactive(
             dimensions=settings.embedding.dimensions,
         )
 
-        # Monkey-patch indexer to report progress via callbacks
+        if doc_gen:
+            console.print(f"  [dim]DocGen: {type(doc_gen._provider).__name__}[/dim]")
+            console.print(f"  [dim]Embed: {type(embed_svc._provider).__name__}[/dim]")
+            console.print(f"  [dim]Smart docs: ON (classes + functions ≥10 lines)[/dim]")
+        console.print()
+
+        status.update("[bold yellow]⟳ Layer 1: Parsing AST...")
         result, _ = await index_repository(
             str(repo_path_obj), repo_id,
             doc_generator=doc_gen,
@@ -213,8 +206,6 @@ async def cmd_index_interactive(
             incremental=not full_reindex,
             smart_docs=True,
         )
-
-        progress.update(main_task, completed=100)
 
     elapsed = time.time() - t_start
 
