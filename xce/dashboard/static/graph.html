@@ -42,6 +42,8 @@
       <button id="btnL2" class="active" style="border-color:#f59e0b;background:#f59e0b;color:#000" onclick="toggleLayer('descriptions')">L2: Desc</button>
       <button id="btnL3" style="border-color:#ef4444;color:#ef4444" onclick="toggleLayer('component_docs')">L3: Docs</button>
       <button id="btnL4" style="border-color:#ec4899;color:#ec4899" onclick="toggleLayer('architecture')">L4: Arch</button>
+      <button id="btnColorMode" style="border-color:#64748b;color:#64748b;margin-left:8px" onclick="toggleColorMode()">🎨 By Module</button>
+      <button id="btnHierarchy" style="border-color:#64748b;color:#64748b" onclick="toggleHierarchy()">⬇ Hierarchy</button>
     </div>
     <span class="stats" id="stats">Loading...</span>
   </div>
@@ -133,7 +135,7 @@
       if (activeLayers.ast) {
         for (const n of data.nodes.ast || []) {
           allNodeData[n.id] = { ...n, layer: 'ast' };
-          const c = nodeColors[n.kind] || nodeColors.function;
+          const c = colorByModule ? { background: moduleColor(n.filepath), border: '#1e293b' } : (nodeColors[n.kind] || nodeColors.function);
           nodes.push({
             id: n.id,
             label: n.name || '?',
@@ -142,6 +144,8 @@
             shape: n.kind === 'class' ? 'box' : n.kind === 'module' ? 'diamond' : 'dot',
             title: `[L1] ${n.kind}: ${n.name}\n${n.filepath}\nL${n.start_line}-${n.end_line}${n.docstring ? '\n' + n.docstring.slice(0,80) : ''}`,
             font: { color: '#e2e8f0', size: 9 },
+            level: hierarchyMode ? 3 : undefined,
+            group: colorByModule ? (n.filepath || '').split('/').slice(0,-1).join('/') : undefined,
           });
         }
       }
@@ -159,6 +163,7 @@
             shape: 'box',
             title: `[L2] ${(d.summary||'').slice(0,100)}`,
             font: { color: '#000', size: 8 },
+            level: hierarchyMode ? 2 : undefined,
           });
         }
       }
@@ -174,8 +179,9 @@
             color: nodeColors.component_doc,
             size: 8,
             shape: 'triangle',
-            title: `[L3] Algorithm: ${cd.algorithm}\nData flow: ${cd.data_flow}`,
+            title: `[L3] ${(cd.algorithm||'').slice(0,80)}`,
             font: { color: '#fff', size: 8 },
+            level: hierarchyMode ? 1 : undefined,
           });
         }
       }
@@ -191,8 +197,9 @@
             color: nodeColors.architecture,
             size: 28,
             shape: 'hexagon',
-            title: `[L4] Module: ${a.id}\nRole: ${a.role}\nPatterns: ${(a.patterns||[]).join(', ')}`,
+            title: `[L4] ${a.id}: ${a.role||''}`,
             font: { color: '#fff', size: 10, multi: true },
+            level: hierarchyMode ? 0 : undefined,
           });
         }
       }
@@ -252,13 +259,19 @@
         `L3: ${(data.nodes.component_docs||[]).length} | L4: ${(data.nodes.architecture||[]).length}`;
 
       if (network) network.destroy();
-      network = new vis.Network(document.getElementById('graph'), { nodes, edges: validEdges }, {
+      const options = {
         nodes: { borderWidth: 2, shadow: true },
         edges: { smooth: { enabled: true, type: 'continuous', roundness: 0.2 }, arrows: { to: { scaleFactor: 0.4 } } },
-        physics: { solver: 'forceAtlas2Based', forceAtlas2Based: { gravitationalConstant: -30, centralGravity: 0.005, springLength: 100, damping: 0.4 }, stabilization: { iterations: 80 } },
         interaction: { hover: true, tooltipDelay: 100, navigationButtons: true },
-        layout: { improvedLayout: false },
-      });
+      };
+      if (hierarchyMode) {
+        options.layout = { hierarchical: { direction: 'UD', sortMethod: 'directed', levelSeparation: 150, nodeSpacing: 100 } };
+        options.physics = false;
+      } else {
+        options.layout = { improvedLayout: false };
+        options.physics = { solver: 'forceAtlas2Based', forceAtlas2Based: { gravitationalConstant: -30, centralGravity: 0.005, springLength: 100, damping: 0.4 }, stabilization: { iterations: 80 } };
+      }
+      network = new vis.Network(document.getElementById('graph'), { nodes, edges: validEdges }, options);
 
       network.on('click', params => {
         if (params.nodes.length > 0) showDetail(allNodeData[params.nodes[0]]);
@@ -298,6 +311,45 @@
         if (ids.length > 0) { network.selectNodes(ids.slice(0, 10)); network.focus(ids[0], { scale: 1.5, animation: true }); }
       }
     });
+
+    let colorByModule = false;
+    let hierarchyMode = false;
+
+    // Generate consistent color for a module path
+    function moduleColor(filepath) {
+      if (!filepath) return '#64748b';
+      const dir = filepath.includes('/') ? filepath.split('/').slice(0, -1).join('/') : '.';
+      let hash = 0;
+      for (let i = 0; i < dir.length; i++) hash = dir.charCodeAt(i) + ((hash << 5) - hash);
+      const hue = Math.abs(hash) % 360;
+      return `hsl(${hue}, 65%, 55%)`;
+    }
+
+    function toggleColorMode() {
+      colorByModule = !colorByModule;
+      const btn = document.getElementById('btnColorMode');
+      if (colorByModule) {
+        btn.classList.add('active');
+        btn.style.background = '#64748b'; btn.style.color = '#fff';
+      } else {
+        btn.classList.remove('active');
+        btn.style.background = 'transparent'; btn.style.color = '#64748b';
+      }
+      if (cachedData) renderGraph(cachedData);
+    }
+
+    function toggleHierarchy() {
+      hierarchyMode = !hierarchyMode;
+      const btn = document.getElementById('btnHierarchy');
+      if (hierarchyMode) {
+        btn.classList.add('active');
+        btn.style.background = '#64748b'; btn.style.color = '#fff';
+      } else {
+        btn.classList.remove('active');
+        btn.style.background = 'transparent'; btn.style.color = '#64748b';
+      }
+      if (cachedData) renderGraph(cachedData);
+    }
 
     loadRepos();
   </script>
