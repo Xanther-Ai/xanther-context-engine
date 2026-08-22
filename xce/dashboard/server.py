@@ -541,12 +541,23 @@ def create_app() -> FastAPI:
                 )
                 arch_edges = [dict(r) async for r in r8]
 
+                # Layer 5: XME Memory nodes (PersonalFact)
+                r9 = await session.run(
+                    "MATCH (f:PersonalFact {project_id: $rid, status: 'active'}) "
+                    "RETURN f.fact_id AS id, f.attribute AS attribute, f.value AS value, "
+                    "f.fact_type AS fact_type, f.session_date AS session_date, "
+                    "'memory' AS layer LIMIT $lim",
+                    {"rid": repo_id, "lim": limit}
+                )
+                memory_nodes = [dict(r) async for r in r9]
+
             return {
                 "nodes": {
                     "ast": ast_nodes,
                     "descriptions": desc_nodes,
                     "component_docs": cdoc_nodes,
                     "architecture": arch_nodes,
+                    "memory": memory_nodes,
                 },
                 "edges": {
                     "ast": ast_edges,
@@ -559,6 +570,7 @@ def create_app() -> FastAPI:
                     "descriptions": len(desc_nodes),
                     "component_docs": len(cdoc_nodes),
                     "architecture": len(arch_nodes),
+                    "memory": len(memory_nodes),
                     "ast_edges": len(ast_edges),
                 },
             }
