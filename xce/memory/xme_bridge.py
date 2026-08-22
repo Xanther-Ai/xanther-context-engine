@@ -95,16 +95,14 @@ class XMEBridge:
                 xme_path = os.path.join(os.path.dirname(__file__), "..", "..", "..", "xanther-memory-engine")
                 if os.path.isdir(xme_path) and xme_path not in sys.path:
                     sys.path.insert(0, xme_path)
-                from xme.config import XMESettings
                 from xme.layers.episodic import EpisodicStore
-                settings = XMESettings(
-                    sqlite_path=self._xme_db_path,
-                    fallback_mode=True,
-                    opensearch_enabled=bool(self._opensearch_url),
+                self._episodic = EpisodicStore(
                     opensearch_url=self._opensearch_url or "http://localhost:9200",
+                    sqlite_path=self._xme_db_path,
+                    opensearch_enabled=bool(self._opensearch_url),
+                    embedding_dims=384,
                 )
-                self._episodic = EpisodicStore(settings)
-                await self._episodic.init()
+                self._episodic.connect()
                 logger.info("XME EpisodicStore initialised (opensearch=%s)", bool(self._opensearch_url))
             except ImportError as e:
                 logger.warning("XME EpisodicStore not available: %s", e)
@@ -295,7 +293,7 @@ class XMEBridge:
             episode_id = f"{repo_id}:file:{filepath.replace('/', '_').replace('.', '_')}"
 
             try:
-                from xme.layers.episodic import Episode
+                from xme.layers.episodic import Episode, Turn
                 import uuid
                 ep = Episode(
                     episode_id=str(uuid.uuid5(uuid.NAMESPACE_URL, episode_id)),
@@ -303,11 +301,12 @@ class XMEBridge:
                     project_id=repo_id,
                     user_id="xce_agent",
                     summary=f"Code file: {filepath}",
-                    full_transcript=transcript,
-                    created_at=date,
-                    metadata={"filepath": filepath, "repo_id": repo_id, "source": "xce_index"},
+                    outcome="indexed",
                 )
-                await self._episodic.store(ep)
+                # Store transcript as a single assistant turn — this makes it
+                # searchable via FTS since full_transcript is built from turns
+                ep.turns.append(Turn(role="assistant", content=transcript))
+                await self._episodic.save_episode(ep)
                 written += 1
             except Exception as e:
                 logger.debug("Failed to write episode for %s: %s", filepath, e)

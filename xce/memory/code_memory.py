@@ -93,16 +93,16 @@ class CodeMemory:
             logger.warning("TemporalFactGraph init failed: %s", e)
 
         try:
-            from xme.config import XMESettings
             from xme.layers.episodic import EpisodicStore
-            settings = XMESettings(
-                sqlite_path=self._xme_db_path,
-                fallback_mode=True,
-                opensearch_enabled=bool(self._opensearch_url),
+            self._episodic = EpisodicStore(
                 opensearch_url=self._opensearch_url or "http://localhost:9200",
+                sqlite_path=self._xme_db_path,
+                opensearch_enabled=bool(self._opensearch_url),
+                embedding_dims=384,
             )
-            self._episodic = EpisodicStore(settings)
-            await self._episodic.init()
+            # EpisodicStore uses synchronous connect()
+            self._episodic.connect()
+            logger.info("XME EpisodicStore initialised (opensearch=%s)", bool(self._opensearch_url))
         except Exception as e:
             logger.warning("EpisodicStore init failed: %s", e)
 
@@ -201,7 +201,7 @@ class CodeMemory:
             return None
 
         try:
-            from xme.layers.episodic import Episode
+            from xme.layers.episodic import Episode, Turn
             import uuid
             ts = datetime.now(timezone.utc).isoformat()
             files_str = ", ".join(files or [])
@@ -212,11 +212,10 @@ class CodeMemory:
                 project_id=repo_id,
                 user_id=user_id,
                 summary=action[:200],
-                full_transcript=transcript,
-                created_at=ts,
-                metadata={"files": files or [], "outcome": outcome, "source": "agent_action"},
+                outcome=outcome,
             )
-            await self._episodic.store(ep)
+            ep.turns.append(Turn(role="assistant", content=transcript))
+            await self._episodic.save_episode(ep)
             logger.debug("Recorded agent action: %s", action[:60])
             return ep.episode_id
         except Exception as e:

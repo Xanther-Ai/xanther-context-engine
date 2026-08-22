@@ -31,6 +31,10 @@ sys.path.insert(0, str(ROOT))
 from dotenv import load_dotenv
 load_dotenv(ROOT / ".env")
 
+# Unset stale AWS credentials so embedding service uses OpenRouter, not Bedrock
+for _aws_key in ("AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY", "AWS_SESSION_TOKEN"):
+    os.environ.pop(_aws_key, None)
+
 logging.basicConfig(level=logging.WARNING)
 
 # ---------------------------------------------------------------------------
