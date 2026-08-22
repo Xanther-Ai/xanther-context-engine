@@ -28,6 +28,8 @@
     #detail p { color: #cbd5e1; margin-top: 4px; font-size: 12px; }
     .loading { position: absolute; top: 50%; left: 50%; transform: translate(-50%,-50%); color: #94a3b8; }
     .title { font-weight: 700; font-size: 16px; }
+    /* vis-network tooltip */
+    div.vis-tooltip { max-width: 300px !important; word-wrap: break-word; white-space: pre-wrap; font-size: 12px; padding: 8px; background: #1e293b !important; border: 1px solid #334155 !important; color: #e2e8f0 !important; border-radius: 6px; }
   </style>
 </head>
 <body>
@@ -138,7 +140,7 @@
             color: c,
             size: n.kind === 'class' ? 22 : n.kind === 'module' ? 18 : 12,
             shape: n.kind === 'class' ? 'box' : n.kind === 'module' ? 'diamond' : 'dot',
-            title: `[L1] ${n.kind}: ${n.name}\n${n.filepath}\nLines ${n.start_line}-${n.end_line}`,
+            title: `[L1] ${n.kind}: ${n.name}\n${n.filepath}\nL${n.start_line}-${n.end_line}${n.docstring ? '\n' + n.docstring.slice(0,80) : ''}`,
             font: { color: '#e2e8f0', size: 9 },
           });
         }
@@ -155,7 +157,7 @@
             color: nodeColors.description,
             size: 10,
             shape: 'box',
-            title: `[L2] Summary:\n${d.summary}\n\nResponsibilities: ${(d.responsibilities||[]).join(', ')}`,
+            title: `[L2] ${(d.summary||'').slice(0,100)}`,
             font: { color: '#000', size: 8 },
           });
         }
