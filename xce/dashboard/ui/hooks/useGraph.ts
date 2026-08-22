@@ -13,22 +13,24 @@ export function useGraph() {
     try {
       // Get first repository if not specified
       if (!repoId) {
-        const reposRes = await fetch(`${API_BASE}/api/repositories`);
+        const reposRes = await fetch(`${API_BASE}/api/graph/repos`);
         const reposData = await reposRes.json();
-        if (reposData.repositories?.length > 0) {
-          repoId = reposData.repositories[0].repo_id;
+        const repos = reposData.repos || [];
+        const real = repos.find((r: any) => !r.repo_id.startsWith('test_') && !r.repo_id.startsWith('tgr_'));
+        if (real) {
+          repoId = real.repo_id;
+        } else if (repos.length > 0) {
+          repoId = repos[0].repo_id;
         }
       }
       
       if (repoId) {
         const [nodesRes, edgesRes] = await Promise.all([
-          fetch(`${API_BASE}/api/graph/nodes?repo_id=${repoId}&limit=500`),
+          fetch(`${API_BASE}/api/graph/nodes?repo_id=${repoId}&limit=300`),
           fetch(`${API_BASE}/api/graph/edges?repo_id=${repoId}&limit=500`)
         ]);
-        
         const nodesData = await nodesRes.json();
         const edgesData = await edgesRes.json();
-        
         setNodes(nodesData.nodes || []);
         setEdges(edgesData.edges || []);
       }

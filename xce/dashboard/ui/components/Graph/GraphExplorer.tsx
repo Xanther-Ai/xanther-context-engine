@@ -71,8 +71,8 @@ export default function GraphExplorer({ onSymbolSelect }: GraphExplorerProps) {
 
     try {
       const [nodesRes, edgesRes] = await Promise.all([
-        fetch(`${API_BASE}/api/graph/nodes?repo_id=${selectedRepo}&limit=1000`),
-        fetch(`${API_BASE}/api/graph/edges?repo_id=${selectedRepo}&limit=2000`),
+        fetch(`${API_BASE}/api/graph/nodes?repo_id=${selectedRepo}&limit=300`),
+        fetch(`${API_BASE}/api/graph/edges?repo_id=${selectedRepo}&limit=500`),
       ]);
       const nodesData = await nodesRes.json();
       const edgesData = await edgesRes.json();
@@ -158,7 +158,7 @@ export default function GraphExplorer({ onSymbolSelect }: GraphExplorerProps) {
           navigationButtons: true,
         },
         layout: {
-          improvedLayout: true,
+          improvedLayout: false,
         },
       };
 
