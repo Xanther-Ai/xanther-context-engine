@@ -42,7 +42,8 @@
       <button id="btnL2" class="active" style="border-color:#f59e0b;background:#f59e0b;color:#000" onclick="toggleLayer('descriptions')">L2: Desc</button>
       <button id="btnL3" style="border-color:#ef4444;color:#ef4444" onclick="toggleLayer('component_docs')">L3: Docs</button>
       <button id="btnL4" style="border-color:#ec4899;color:#ec4899" onclick="toggleLayer('architecture')">L4: Arch</button>
-      <button id="btnL5" style="border-color:#22d3ee;color:#22d3ee" onclick="toggleLayer('memory')">L5: Memory</button>
+      <button id="btnL5" style="border-color:#22d3ee;color:#22d3ee" onclick="toggleLayer('code_facts')">Code Facts</button>
+      <button id="btnL6" style="border-color:#a78bfa;color:#a78bfa" onclick="toggleLayer('agent_memory')">Agent Memory</button>
       <button id="btnColorMode" style="border-color:#64748b;color:#64748b;margin-left:8px" onclick="toggleColorMode()">🎨 By Module</button>
       <button id="btnHierarchy" style="border-color:#64748b;color:#64748b" onclick="toggleHierarchy()">⬇ Hierarchy</button>
     </div>
@@ -63,7 +64,8 @@
     <span><span class="box" style="background:#f59e0b"></span> Description (L2)</span>
     <span><span class="box" style="background:#ef4444"></span> ComponentDoc (L3)</span>
     <span><span class="box" style="background:#ec4899"></span> Architecture (L4)</span>
-    <span><span class="dot" style="background:#22d3ee"></span> Memory (XME)</span>
+    <span><span class="dot" style="background:#22d3ee"></span> Code Facts</span>
+    <span><span class="dot" style="background:#a78bfa"></span> Agent Memory</span>
     <span style="margin-left:12px">— <span style="color:#3b82f6">Calls</span></span>
     <span>-- <span style="color:#22c55e">Imports</span></span>
     <span>━ <span style="color:#ef4444">Inherits</span></span>
@@ -76,7 +78,7 @@
     let network = null;
     let allNodeData = {};
     let cachedData = null;
-    let activeLayers = { ast: true, descriptions: true, component_docs: false, architecture: false, memory: false };
+    let activeLayers = { ast: true, descriptions: true, component_docs: false, architecture: false, code_facts: false, agent_memory: false };
 
     const nodeColors = {
       class: { background: '#8b5cf6', border: '#6d28d9' },
@@ -93,7 +95,7 @@
 
     function toggleLayer(layer) {
       activeLayers[layer] = !activeLayers[layer];
-      const btnMap = { ast: 'btnL1', descriptions: 'btnL2', component_docs: 'btnL3', architecture: 'btnL4', memory: 'btnL5' };
+      const btnMap = { ast: 'btnL1', descriptions: 'btnL2', component_docs: 'btnL3', architecture: 'btnL4', code_facts: 'btnL5', agent_memory: 'btnL6' };
       const btn = document.getElementById(btnMap[layer]);
       if (activeLayers[layer]) {
         btn.classList.add('active');
@@ -208,19 +210,37 @@
         }
       }
 
-      // Layer 5: XME Memory nodes (PersonalFact)
-      if (activeLayers.memory) {
-        for (const m of data.nodes.memory || []) {
-          const nid = 'mem:' + m.id;
-          allNodeData[nid] = { ...m, layer: 'memory' };
+      // Code Facts (from XCE bridge — code_symbol, code_dependency)
+      if (activeLayers.code_facts) {
+        for (const m of data.nodes.code_facts || []) {
+          const nid = 'cfact:' + m.id;
+          allNodeData[nid] = { ...m, layer: 'code_fact' };
           nodes.push({
             id: nid,
-            label: `💭 ${(m.attribute||'').slice(0,20)}`,
+            label: `📋 ${(m.attribute||'').slice(0,18)}`,
             color: nodeColors.memory,
-            size: 10,
+            size: 8,
             shape: 'star',
-            title: `[Memory] ${m.attribute}: ${(m.value||'').slice(0,80)}\nType: ${m.fact_type}\nDate: ${m.session_date||''}`,
-            font: { color: '#fff', size: 8 },
+            title: `[Code Fact] ${m.attribute}: ${(m.value||'').slice(0,60)}`,
+            font: { color: '#fff', size: 7 },
+            level: hierarchyMode ? 4 : undefined,
+          });
+        }
+      }
+
+      // Agent Memory (decisions, actions, personal facts)
+      if (activeLayers.agent_memory) {
+        for (const m of data.nodes.agent_memory || []) {
+          const nid = 'amem:' + m.id;
+          allNodeData[nid] = { ...m, layer: 'agent_memory' };
+          nodes.push({
+            id: nid,
+            label: `🧠 ${(m.attribute||'').slice(0,18)}`,
+            color: { background: '#a78bfa', border: '#7c3aed' },
+            size: 14,
+            shape: 'star',
+            title: `[Agent Memory] ${m.attribute}\n${(m.value||'').slice(0,80)}\nType: ${m.fact_type}`,
+            font: { color: '#fff', size: 9 },
             level: hierarchyMode ? 4 : undefined,
           });
         }
@@ -279,7 +299,7 @@
         `${nodes.length} nodes · ${validEdges.length} edges | ` +
         `L1: ${(data.nodes.ast||[]).length} | L2: ${(data.nodes.descriptions||[]).length} | ` +
         `L3: ${(data.nodes.component_docs||[]).length} | L4: ${(data.nodes.architecture||[]).length} | ` +
-        `Mem: ${(data.nodes.memory||[]).length}`;
+        `Facts: ${(data.nodes.code_facts||[]).length} | Memory: ${(data.nodes.agent_memory||[]).length}`;
 
       if (network) network.destroy();
       const options = {
@@ -323,6 +343,14 @@
         document.getElementById('detailName').textContent = `[L4] Architecture: ${n.id}`;
         document.getElementById('detailMeta').textContent = `Role: ${n.role}`;
         document.getElementById('detailDoc').textContent = `Patterns: ${(n.patterns||[]).join(', ')}`;
+      } else if (layer === 'code_fact') {
+        document.getElementById('detailName').textContent = `[Code Fact] ${n.attribute}`;
+        document.getElementById('detailMeta').textContent = `Type: ${n.fact_type} | Date: ${n.session_date||''}`;
+        document.getElementById('detailDoc').textContent = n.value || '';
+      } else if (layer === 'agent_memory') {
+        document.getElementById('detailName').textContent = `[Agent Memory] ${n.attribute}`;
+        document.getElementById('detailMeta').textContent = `Type: ${n.fact_type} | Date: ${n.session_date||''}`;
+        document.getElementById('detailDoc').textContent = n.value || '';
       } else if (layer === 'memory') {
         document.getElementById('detailName').textContent = `[Memory] ${n.attribute}`;
         document.getElementById('detailMeta').textContent = `Type: ${n.fact_type} | Date: ${n.session_date||'unknown'}`;

@@ -541,15 +541,28 @@ def create_app() -> FastAPI:
                 )
                 arch_edges = [dict(r) async for r in r8]
 
-                # Layer 5: XME Memory nodes (PersonalFact)
-                r9 = await session.run(
+                # Layer 5: XME Memory nodes — split into code_facts vs agent_memory
+                # Code facts: code_symbol, code_description, code_dependency
+                r9a = await session.run(
                     "MATCH (f:PersonalFact {project_id: $rid, status: 'active'}) "
+                    "WHERE f.fact_type IN ['code_symbol', 'code_description', 'code_dependency'] "
                     "RETURN f.fact_id AS id, f.attribute AS attribute, f.value AS value, "
                     "f.fact_type AS fact_type, f.session_date AS session_date, "
-                    "'memory' AS layer LIMIT $lim",
+                    "'code_fact' AS layer LIMIT $lim",
                     {"rid": repo_id, "lim": limit}
                 )
-                memory_nodes = [dict(r) async for r in r9]
+                code_fact_nodes = [dict(r) async for r in r9a]
+
+                # Agent memory: decisions, actions, personal_fact, dated_event, etc.
+                r9b = await session.run(
+                    "MATCH (f:PersonalFact {project_id: $rid, status: 'active'}) "
+                    "WHERE NOT f.fact_type IN ['code_symbol', 'code_description', 'code_dependency'] "
+                    "RETURN f.fact_id AS id, f.attribute AS attribute, f.value AS value, "
+                    "f.fact_type AS fact_type, f.session_date AS session_date, "
+                    "'agent_memory' AS layer LIMIT $lim",
+                    {"rid": repo_id, "lim": limit}
+                )
+                agent_memory_nodes = [dict(r) async for r in r9b]
 
             return {
                 "nodes": {
@@ -557,7 +570,8 @@ def create_app() -> FastAPI:
                     "descriptions": desc_nodes,
                     "component_docs": cdoc_nodes,
                     "architecture": arch_nodes,
-                    "memory": memory_nodes,
+                    "code_facts": code_fact_nodes,
+                    "agent_memory": agent_memory_nodes,
                 },
                 "edges": {
                     "ast": ast_edges,
@@ -570,7 +584,8 @@ def create_app() -> FastAPI:
                     "descriptions": len(desc_nodes),
                     "component_docs": len(cdoc_nodes),
                     "architecture": len(arch_nodes),
-                    "memory": len(memory_nodes),
+                    "code_facts": len(code_fact_nodes),
+                    "agent_memory": len(agent_memory_nodes),
                     "ast_edges": len(ast_edges),
                 },
             }
