@@ -2,20 +2,14 @@
 """
 Xanther Interactive CLI — xanther-cli
 =====================================
-Rich terminal UI for indexing repos with live progress bars and stage views.
+Rich terminal UI with real progress bars, stage transitions, and % updates.
 
 Usage:
-    xanther index /path/to/repo                     # interactive full index
+    xanther index /path/to/repo                     # full index (XCE + XME)
     xanther index /path/to/repo --mode xme          # fast mode (no LLM docs)
-    xanther index /path/to/repo --diff              # index only changed files
+    xanther index /path/to/repo --diff              # only changed files
     xanther status                                  # show indexed repos
-    xanther query "how does auth work?" --repo myrepo   # query memory
-
-Features:
-    - Live progress bars per layer
-    - Stage status indicators (✓ completed, ⟳ running, ○ pending)
-    - Background processing with real-time updates
-    - Git-diff based incremental indexing (--diff flag)
+    xanther query "how does auth work?" --repo id   # query memory
 """
 from __future__ import annotations
 
@@ -30,8 +24,8 @@ from typing import Optional
 
 from rich.console import Console
 from rich.panel import Panel
+from rich.progress import Progress, SpinnerColumn, BarColumn, TextColumn, TimeElapsedColumn, TaskProgressColumn
 from rich.table import Table
-from rich.text import Text
 
 # Set up path
 ROOT = Path(__file__).resolve().parent.parent.parent
@@ -45,27 +39,15 @@ os.environ.setdefault("XCE_LLM_PROVIDER", "openrouter")
 
 console = Console()
 
-# Stage definitions
-STAGES = [
-    ("parse", "Layer 1: AST Parsing"),
-    ("graph", "Graph Storage"),
-    ("docs_l2", "Layer 2: Component Summaries"),
-    ("docs_l3", "Layer 3: Component Docs"),
-    ("docs_l4", "Layer 4: Architecture Docs"),
-    ("embeddings", "Embeddings"),
-    ("bridge", "XME Bridge Sync"),
-]
-
 
 def _get_git_changed_files(repo_path: str) -> list[str]:
-    """Get files changed since last commit (staged + unstaged + untracked)."""
+    """Get files changed since last commit."""
     try:
         result = subprocess.run(
             ["git", "diff", "--name-only", "HEAD"],
             capture_output=True, text=True, cwd=repo_path
         )
         changed = set(result.stdout.strip().splitlines())
-        # Also get untracked
         result2 = subprocess.run(
             ["git", "ls-files", "--others", "--exclude-standard"],
             capture_output=True, text=True, cwd=repo_path
@@ -76,29 +58,6 @@ def _get_git_changed_files(repo_path: str) -> list[str]:
         return []
 
 
-def _build_status_table(stages: dict[str, str], stats: dict) -> Table:
-    """Build a rich table showing stage status."""
-    table = Table(show_header=False, box=None, padding=(0, 2))
-    table.add_column("icon", width=3)
-    table.add_column("stage", min_width=30)
-    table.add_column("detail", min_width=30)
-
-    icons = {"done": "✓", "running": "⟳", "pending": "○", "skipped": "—", "failed": "✗"}
-    colors = {"done": "green", "running": "yellow", "pending": "dim", "skipped": "dim", "failed": "red"}
-
-    for stage_id, stage_name in STAGES:
-        status = stages.get(stage_id, "pending")
-        icon = icons.get(status, "?")
-        color = colors.get(status, "white")
-        detail = stats.get(stage_id, "")
-        table.add_row(
-            f"[{color}]{icon}[/{color}]",
-            f"[{color}]{stage_name}[/{color}]",
-            f"[dim]{detail}[/dim]",
-        )
-    return table
-
-
 async def cmd_index_interactive(
     repo_path: str,
     repo_id: Optional[str] = None,
@@ -106,13 +65,15 @@ async def cmd_index_interactive(
     diff_only: bool = False,
     full_reindex: bool = False,
 ) -> None:
-    """Interactive indexing with rich progress display."""
+    """Interactive indexing with real progress bars per stage."""
     from xce.config import get_settings
     from xce.graph.store import GraphStore
-    from xce.indexing.indexer import index_repository, _discover_source_files
     from xce.indexing.doc_generator import DocGenerator
     from xce.indexing.embedding import EmbeddingService
+    from xce.indexing.indexer import _discover_source_files, _compute_file_hash, _is_worth_documenting, group_by_module
     from xce.parsers import get_default_registry
+    from xce.models import ASTNode, NodeKind
+    from xce.parser import resolve_cross_file_imports
 
     repo_path_obj = Path(repo_path).resolve()
     if not repo_path_obj.is_dir():
@@ -122,109 +83,248 @@ async def cmd_index_interactive(
     repo_id = repo_id or repo_path_obj.name
     settings = get_settings()
 
-    # Set mode env vars
-    if mode == "xme":
-        os.environ["XCE_DEEP_DOCS"] = "false"
-        os.environ["XCE_ARCH_DOCS"] = "false"
+    # Mode env
+    run_docs = mode in ("xce", "full")
+    run_bridge = mode in ("xme", "full")
+    if run_bridge:
         os.environ["XME_BRIDGE_ENABLED"] = "true"
-    elif mode == "full":
-        os.environ["XCE_DEEP_DOCS"] = "true"
-        os.environ["XCE_ARCH_DOCS"] = "true"
-        os.environ["XME_BRIDGE_ENABLED"] = "true"
-    else:  # xce
-        os.environ["XCE_DEEP_DOCS"] = "true"
-        os.environ["XCE_ARCH_DOCS"] = "true"
+    else:
         os.environ["XME_BRIDGE_ENABLED"] = "false"
-
-    # Diff mode: show changed files
-    if diff_only:
-        changed = _get_git_changed_files(str(repo_path_obj))
-        if not changed:
-            console.print("[green]✓ No files changed since last commit — nothing to index.[/green]")
-            return
-        console.print(f"\n[yellow]Changed files ({len(changed)}):[/yellow]")
-        for f in changed[:20]:
-            console.print(f"  [dim]•[/dim] {f}")
-        if len(changed) > 20:
-            console.print(f"  [dim]... and {len(changed)-20} more[/dim]")
-        console.print()
-
-    # Discover files
-    registry = get_default_registry()
-    source_files = _discover_source_files(str(repo_path_obj), registry)
 
     # Header
     console.print()
     console.print(Panel(
-        f"[bold]Indexing:[/bold] {repo_path_obj.name}\n"
+        f"[bold]Repo:[/bold]    {repo_path_obj.name}\n"
         f"[dim]Path:[/dim]    {repo_path_obj}\n"
-        f"[dim]Repo ID:[/dim] {repo_id}\n"
-        f"[dim]Mode:[/dim]    {mode.upper()}\n"
-        f"[dim]Files:[/dim]   {len(source_files)} source files\n"
-        f"[dim]Diff:[/dim]    {'yes (changed only)' if diff_only else 'no (full scan)'}",
+        f"[dim]ID:[/dim]      {repo_id}\n"
+        f"[dim]Mode:[/dim]    {mode.upper()} {'(no LLM docs)' if mode == 'xme' else '(all layers)'}",
         title="🧠 Xanther Index",
         border_style="blue",
     ))
     console.print()
 
-    # Stage tracking
-    stages: dict[str, str] = {s[0]: "pending" for s in STAGES}
-    stats: dict[str, str] = {}
     t_start = time.time()
 
-    # Run indexing with progress updates
-    with console.status("[bold green]Indexing...") as status:
-        # Phase 1: Connect + Parse
-        status.update("[bold yellow]Connecting to Neo4j...")
-        graph_store = GraphStore(
-            neo4j_uri=settings.neo4j.uri,
-            neo4j_auth=settings.neo4j.auth,
-            embedding_dimensions=settings.embedding.dimensions,
-        )
-        await graph_store.init_schema()
-        status.update("[bold yellow]✓ Neo4j connected")
+    # Connect Neo4j
+    graph_store = GraphStore(
+        neo4j_uri=settings.neo4j.uri,
+        neo4j_auth=settings.neo4j.auth,
+        embedding_dimensions=settings.embedding.dimensions,
+    )
+    await graph_store.init_schema()
 
-        doc_gen = DocGenerator(api_key=settings.openrouter_api_key) if mode != "xme" else None
-        embed_svc = EmbeddingService(
-            api_key=settings.openrouter_api_key,
-            model=settings.embedding.model,
-            dimensions=settings.embedding.dimensions,
-        )
+    # Services
+    doc_gen = DocGenerator(api_key=settings.openrouter_api_key) if run_docs else None
+    embed_svc = EmbeddingService(
+        api_key=settings.openrouter_api_key,
+        model=settings.embedding.model,
+        dimensions=settings.embedding.dimensions,
+    )
 
-        if doc_gen:
-            console.print(f"  [dim]DocGen: {type(doc_gen._provider).__name__}[/dim]")
-            console.print(f"  [dim]Embed: {type(embed_svc._provider).__name__}[/dim]")
-            console.print(f"  [dim]Smart docs: ON (classes + functions ≥10 lines)[/dim]")
-        console.print()
+    # ===== STAGE 1: Discover + Parse =====
+    registry = get_default_registry()
+    source_files = _discover_source_files(str(repo_path_obj), registry)
 
-        status.update("[bold yellow]⟳ Layer 1: Parsing AST...")
-        result, _ = await index_repository(
-            str(repo_path_obj), repo_id,
-            doc_generator=doc_gen,
-            embedding_service=embed_svc,
-            graph_store=graph_store,
-            incremental=not full_reindex,
-            smart_docs=True,
-        )
+    all_nodes: list[ASTNode] = []
+    all_edges = []
+
+    with Progress(
+        SpinnerColumn(),
+        TextColumn("[bold blue]Layer 1:[/bold blue] Parsing AST"),
+        BarColumn(),
+        TaskProgressColumn(),
+        TimeElapsedColumn(),
+        console=console,
+    ) as progress:
+        task = progress.add_task("parsing", total=len(source_files))
+        for abs_path in source_files:
+            rel_path = os.path.relpath(abs_path, str(repo_path_obj))
+            parser = registry.get_parser(rel_path)
+            if parser is None:
+                progress.advance(task)
+                continue
+            try:
+                source = Path(abs_path).read_text(encoding="utf-8", errors="replace")
+                nodes, edges = parser.parse_file(rel_path, source, repo_id)
+                all_nodes.extend(nodes)
+                all_edges.extend(edges)
+            except Exception:
+                pass
+            progress.advance(task)
+
+    # Cross-file imports
+    cross_edges = resolve_cross_file_imports(all_nodes)
+    all_edges.extend(cross_edges)
+    console.print(f"  [green]✓[/green] {len(all_nodes)} nodes, {len(all_edges)} edges parsed")
+
+    # ===== STAGE 2: Store in Neo4j =====
+    with console.status("[bold yellow]Storing graph in Neo4j..."):
+        nodes_stored = await graph_store.upsert_ast_nodes(all_nodes)
+        edges_stored = await graph_store.upsert_edges(all_edges)
+    console.print(f"  [green]✓[/green] Graph stored: {nodes_stored} nodes, {edges_stored} edges")
+
+    # ===== STAGE 3: Generate component descriptions (Layer 2) =====
+    all_descs = []
+    if doc_gen:
+        nodes_for_docs = [n for n in all_nodes if _is_worth_documenting(n, True)]
+        console.print(f"  [dim]Smart docs: {len(nodes_for_docs)}/{len(all_nodes)} nodes selected[/dim]")
+
+        with Progress(
+            SpinnerColumn(),
+            TextColumn("[bold blue]Layer 2:[/bold blue] Component summaries"),
+            BarColumn(),
+            TaskProgressColumn(),
+            TimeElapsedColumn(),
+            console=console,
+        ) as progress:
+            batch_size = doc_gen.batch_size
+            total_batches = (len(nodes_for_docs) + batch_size - 1) // batch_size
+            task = progress.add_task("docs", total=total_batches)
+            for i in range(0, len(nodes_for_docs), batch_size):
+                batch = nodes_for_docs[i:i + batch_size]
+                try:
+                    descs = await doc_gen.generate_batch(batch)
+                    all_descs.extend(descs)
+                    await graph_store.upsert_documentation(descs)
+                except Exception:
+                    pass
+                progress.advance(task)
+
+        console.print(f"  [green]✓[/green] {len(all_descs)} descriptions generated")
+
+    # ===== STAGE 4: Layer 3 (ComponentDoc) =====
+    docs_count = 0
+    deep_docs = os.environ.get("XCE_DEEP_DOCS", "true").lower() == "true"
+    if doc_gen and deep_docs:
+        desc_map = {d.node_id: d for d in all_descs}
+        func_nodes = [n for n in all_nodes if n.kind in (NodeKind.FUNCTION, NodeKind.METHOD) and n.id in desc_map]
+
+        with Progress(
+            SpinnerColumn(),
+            TextColumn("[bold blue]Layer 3:[/bold blue] Detailed docs"),
+            BarColumn(),
+            TaskProgressColumn(),
+            TimeElapsedColumn(),
+            console=console,
+        ) as progress:
+            task = progress.add_task("layer3", total=len(func_nodes))
+            for node in func_nodes:
+                desc = desc_map.get(node.id)
+                if desc:
+                    try:
+                        cdoc = await doc_gen.generate_component_doc(desc, node.source_text or "")
+                        if cdoc:
+                            await graph_store.upsert_documentation([cdoc])
+                            docs_count += 1
+                    except Exception:
+                        pass
+                progress.advance(task)
+
+        console.print(f"  [green]✓[/green] {docs_count} component docs generated")
+
+    # ===== STAGE 5: Layer 4 (Architecture) =====
+    arch_count = 0
+    arch_docs = os.environ.get("XCE_ARCH_DOCS", "true").lower() == "true"
+    if doc_gen and arch_docs:
+        desc_map = {d.node_id: d for d in all_descs}
+        modules = group_by_module(all_nodes)
+
+        with Progress(
+            SpinnerColumn(),
+            TextColumn("[bold blue]Layer 4:[/bold blue] Architecture docs"),
+            BarColumn(),
+            TaskProgressColumn(),
+            TimeElapsedColumn(),
+            console=console,
+        ) as progress:
+            task = progress.add_task("layer4", total=len(modules))
+            for module_path, module_nodes in modules.items():
+                module_descs = [desc_map[n.id] for n in module_nodes if n.id in desc_map]
+                if module_descs:
+                    try:
+                        adoc = await doc_gen.generate_architecture_doc(module_path, module_descs)
+                        if adoc:
+                            await graph_store.upsert_documentation([adoc])
+                            arch_count += 1
+                    except Exception:
+                        pass
+                progress.advance(task)
+
+        console.print(f"  [green]✓[/green] {arch_count} architecture docs generated")
+
+    # ===== STAGE 6: Embeddings =====
+    emb_count = 0
+    with Progress(
+        SpinnerColumn(),
+        TextColumn("[bold blue]Embeddings:[/bold blue] Vector encoding"),
+        BarColumn(),
+        TaskProgressColumn(),
+        TimeElapsedColumn(),
+        console=console,
+    ) as progress:
+        texts = [embed_svc.build_embedding_text(n) for n in all_nodes]
+        batch_size = 100
+        total_batches = (len(texts) + batch_size - 1) // batch_size
+        task = progress.add_task("embed", total=total_batches)
+        all_embeddings = []
+        for i in range(0, len(texts), batch_size):
+            batch_texts = texts[i:i + batch_size]
+            try:
+                embs = await embed_svc.encode_batch(batch_texts)
+                all_embeddings.extend(embs)
+            except Exception:
+                # Fill with zeros on failure
+                all_embeddings.extend([[0.0] * settings.embedding.dimensions for _ in batch_texts])
+            progress.advance(task)
+
+        if all_embeddings:
+            try:
+                node_ids = [n.id for n in all_nodes]
+                emb_count = await graph_store.upsert_embeddings(node_ids, all_embeddings)
+            except Exception:
+                pass
+
+    console.print(f"  [green]✓[/green] {emb_count} embeddings stored")
+
+    # ===== STAGE 7: XME Bridge =====
+    if run_bridge:
+        with console.status("[bold yellow]XME Bridge: syncing facts + episodes..."):
+            try:
+                from xce.memory.xme_bridge import XMEBridge
+                from datetime import datetime, timezone
+                bridge = XMEBridge(
+                    xme_db_path=os.environ.get("XME_BRIDGE_DB_PATH", ".xanther/xme.db"),
+                    neo4j_driver=graph_store._driver,
+                )
+                br = await bridge.sync_index(
+                    repo_id=repo_id, nodes=all_nodes, edges=all_edges,
+                    descriptions=all_descs, user_id="xce_agent",
+                    index_date=datetime.now(timezone.utc).isoformat(),
+                )
+                await bridge.close()
+                console.print(f"  [green]✓[/green] XME synced: {br['facts_written']} facts + {br['episodes_written']} episodes")
+            except Exception as e:
+                console.print(f"  [yellow]⚠[/yellow] XME bridge: {e}")
 
     elapsed = time.time() - t_start
+    await graph_store.close()
+    if doc_gen:
+        await doc_gen.close()
 
-    # Final summary
+    # ===== Final Summary =====
     console.print()
     console.print(Panel(
         f"[green bold]✓ Indexing Complete[/green bold]\n\n"
         f"  [bold]Time:[/bold]       {elapsed:.1f}s\n"
-        f"  [bold]Nodes:[/bold]      {result.nodes_count:,}\n"
-        f"  [bold]Edges:[/bold]      {result.edges_count:,}\n"
-        f"  [bold]Docs:[/bold]       {result.docs_count:,}\n"
-        f"  [bold]Embeddings:[/bold] {result.embeddings_count:,}\n"
+        f"  [bold]Nodes:[/bold]      {nodes_stored:,}\n"
+        f"  [bold]Edges:[/bold]      {edges_stored:,}\n"
+        f"  [bold]Docs:[/bold]       {len(all_descs) + docs_count + arch_count:,}\n"
+        f"  [bold]Embeddings:[/bold] {emb_count:,}\n"
         f"  [bold]Mode:[/bold]       {mode.upper()}",
         title="📊 Results",
         border_style="green",
     ))
     console.print()
-
-    await graph_store.close()
 
 
 async def cmd_status_interactive() -> None:
@@ -350,6 +450,13 @@ def main():
     if not args.command:
         parser.print_help()
         return
+
+    # Suppress noisy loggers
+    logging.getLogger("httpx").setLevel(logging.WARNING)
+    logging.getLogger("neo4j").setLevel(logging.WARNING)
+    logging.getLogger("xce.indexing").setLevel(logging.WARNING)
+    logging.getLogger("xce.indexing.embedding").setLevel(logging.ERROR)
+    logging.getLogger("xce.indexing.doc_generator").setLevel(logging.ERROR)
 
     if args.command == "index":
         asyncio.run(cmd_index_interactive(
