@@ -1,0 +1,173 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Xanther Graph Explorer</title>
+  <script src="https://unpkg.com/vis-network/standalone/umd/vis-network.min.js"></script>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #0f172a; color: #e2e8f0; }
+    .toolbar { padding: 12px 20px; display: flex; gap: 12px; align-items: center; border-bottom: 1px solid #1e293b; flex-wrap: wrap; }
+    .toolbar select, .toolbar input { padding: 6px 12px; border-radius: 6px; border: 1px solid #334155; background: #1e293b; color: #e2e8f0; font-size: 14px; }
+    .toolbar select { min-width: 200px; }
+    .toolbar input { width: 200px; }
+    .toolbar .stats { margin-left: auto; font-size: 12px; color: #94a3b8; }
+    #graph { width: 100%; height: calc(100vh - 130px); }
+    .legend { padding: 8px 20px; display: flex; gap: 20px; border-top: 1px solid #1e293b; font-size: 12px; }
+    .legend span { display: flex; align-items: center; gap: 4px; }
+    .legend .dot { width: 10px; height: 10px; border-radius: 50%; }
+    .legend .box { width: 10px; height: 10px; border-radius: 2px; }
+    #detail { padding: 12px 20px; border-top: 1px solid #1e293b; display: none; max-height: 150px; overflow: auto; font-size: 13px; }
+    #detail h3 { font-size: 15px; margin-bottom: 4px; }
+    #detail code { color: #94a3b8; font-size: 12px; }
+    #detail p { color: #94a3b8; margin-top: 4px; }
+    .title { font-weight: 700; font-size: 16px; }
+    .loading { position: absolute; top: 50%; left: 50%; transform: translate(-50%,-50%); color: #94a3b8; }
+  </style>
+</head>
+<body>
+  <div class="toolbar">
+    <span class="title">🧠 Xanther Graph</span>
+    <select id="repoSelect"></select>
+    <input id="search" type="text" placeholder="Search symbols..." />
+    <span class="stats" id="stats">Loading...</span>
+  </div>
+  <div id="graph"><div class="loading" id="loadingText">Loading graph data...</div></div>
+  <div id="detail">
+    <h3 id="detailName"></h3>
+    <code id="detailMeta"></code>
+    <p id="detailDoc"></p>
+  </div>
+  <div class="legend">
+    <span><span class="box" style="background:#8b5cf6"></span> Class</span>
+    <span><span class="dot" style="background:#10b981"></span> Function</span>
+    <span><span class="dot" style="background:#06b6d4"></span> Method</span>
+    <span><span class="dot" style="background:#6366f1"></span> Module</span>
+    <span style="margin-left:20px">— <span style="color:#3b82f6">Calls</span></span>
+    <span>-- <span style="color:#22c55e">Imports</span></span>
+    <span>━ <span style="color:#ef4444">Inherits</span></span>
+  </div>
+
+  <script>
+    const API = '';
+    let network = null;
+    let allNodeData = {};
+
+    const colors = {
+      class: { background: '#8b5cf6', border: '#6d28d9' },
+      function: { background: '#10b981', border: '#059669' },
+      method: { background: '#06b6d4', border: '#0891b2' },
+      module: { background: '#6366f1', border: '#4f46e5' },
+      import: { background: '#f59e0b', border: '#d97706' },
+    };
+
+    const edgeColors = { CALLS: '#3b82f6', IMPORTS: '#22c55e', INHERITS: '#ef4444', CONTAINS: '#475569' };
+
+    async function loadRepos() {
+      const res = await fetch(`${API}/api/graph/repos`);
+      const data = await res.json();
+      const sel = document.getElementById('repoSelect');
+      (data.repos || [])
+        .filter(r => !r.repo_id.startsWith('test_') && !r.repo_id.startsWith('tgr_'))
+        .forEach(r => {
+          const opt = document.createElement('option');
+          opt.value = r.repo_id;
+          opt.textContent = `${r.repo_id} (${r.node_count} nodes)`;
+          sel.appendChild(opt);
+        });
+      if (sel.options.length > 0) loadGraph(sel.value);
+    }
+
+    async function loadGraph(repoId) {
+      document.getElementById('loadingText').style.display = 'block';
+      const [nodesRes, edgesRes] = await Promise.all([
+        fetch(`${API}/api/graph/nodes?repo_id=${repoId}&limit=500`),
+        fetch(`${API}/api/graph/edges?repo_id=${repoId}&limit=1000`),
+      ]);
+      const nodesData = await nodesRes.json();
+      const edgesData = await edgesRes.json();
+      const rawNodes = nodesData.nodes || [];
+      const rawEdges = edgesData.edges || [];
+
+      // Filter: skip imports and variables for cleaner graph
+      const filteredNodes = rawNodes.filter(n => !['import','variable','decorator','argument'].includes(n.kind));
+
+      const nodes = filteredNodes.map(n => {
+        allNodeData[n.id] = n;
+        const c = colors[n.kind] || colors.function;
+        return {
+          id: n.id,
+          label: n.name || '?',
+          color: c,
+          size: n.kind === 'class' ? 25 : n.kind === 'module' ? 20 : 14,
+          shape: n.kind === 'class' ? 'box' : n.kind === 'module' ? 'diamond' : 'dot',
+          title: `${n.kind}: ${n.name}\n${n.filepath}\nLines ${n.start_line}-${n.end_line}`,
+          font: { color: '#e2e8f0', size: 10 },
+        };
+      });
+
+      const nodeIds = new Set(nodes.map(n => n.id));
+      const edges = rawEdges
+        .filter(e => nodeIds.has(e.source) && nodeIds.has(e.target))
+        .map(e => ({
+          from: e.source,
+          to: e.target,
+          color: { color: edgeColors[e.relation] || '#475569', opacity: 0.5 },
+          arrows: 'to',
+          dashes: e.relation === 'IMPORTS',
+          width: e.relation === 'INHERITS' ? 3 : 1,
+          title: e.relation,
+        }));
+
+      document.getElementById('stats').textContent = `${nodes.length} nodes · ${edges.length} edges`;
+      document.getElementById('loadingText').style.display = 'none';
+
+      if (network) network.destroy();
+      network = new vis.Network(document.getElementById('graph'), { nodes, edges }, {
+        nodes: { borderWidth: 2, shadow: true },
+        edges: { smooth: { enabled: true, type: 'continuous', roundness: 0.2 }, arrows: { to: { scaleFactor: 0.4 } } },
+        physics: { solver: 'forceAtlas2Based', forceAtlas2Based: { gravitationalConstant: -30, centralGravity: 0.005, springLength: 100, damping: 0.4 }, stabilization: { iterations: 100 } },
+        interaction: { hover: true, tooltipDelay: 100, navigationButtons: true },
+        layout: { improvedLayout: false },
+      });
+
+      network.on('click', params => {
+        if (params.nodes.length > 0) {
+          const n = allNodeData[params.nodes[0]];
+          if (n) showDetail(n);
+        } else {
+          document.getElementById('detail').style.display = 'none';
+        }
+      });
+
+      network.on('stabilizationIterationsDone', () => {
+        network.setOptions({ physics: false });
+      });
+    }
+
+    function showDetail(n) {
+      document.getElementById('detail').style.display = 'block';
+      document.getElementById('detailName').textContent = `${n.kind}: ${n.name}`;
+      document.getElementById('detailMeta').textContent = `${n.filepath} · lines ${n.start_line}-${n.end_line}`;
+      document.getElementById('detailDoc').textContent = n.docstring || n.signature || '';
+    }
+
+    document.getElementById('repoSelect').addEventListener('change', e => loadGraph(e.target.value));
+    document.getElementById('search').addEventListener('keydown', e => {
+      if (e.key === 'Enter' && network) {
+        const q = e.target.value.toLowerCase();
+        const nodeIds = Object.entries(allNodeData)
+          .filter(([_, n]) => n.name?.toLowerCase().includes(q))
+          .map(([id]) => id);
+        if (nodeIds.length > 0) {
+          network.selectNodes(nodeIds.slice(0, 10));
+          network.focus(nodeIds[0], { scale: 1.5, animation: true });
+        }
+      }
+    });
+
+    loadRepos();
+  </script>
+</body>
+</html>
