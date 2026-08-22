@@ -127,6 +127,12 @@ export default function GraphExplorer({ onSymbolSelect }: GraphExplorerProps) {
       // Create network
       if (networkRef.current) {
         networkRef.current.destroy();
+        networkRef.current = null;
+      }
+
+      // Clear the container manually to avoid React conflicts
+      if (containerRef.current) {
+        containerRef.current.innerHTML = '';
       }
 
       const options: Options = {
@@ -190,6 +196,13 @@ export default function GraphExplorer({ onSymbolSelect }: GraphExplorerProps) {
 
   useEffect(() => {
     fetchAndRender();
+    // Cleanup on unmount
+    return () => {
+      if (networkRef.current) {
+        networkRef.current.destroy();
+        networkRef.current = null;
+      }
+    };
   }, [selectedRepo, layers]);
 
   return (
