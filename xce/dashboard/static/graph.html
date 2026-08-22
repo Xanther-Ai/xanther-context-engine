@@ -11,19 +11,23 @@
     .toolbar { padding: 12px 20px; display: flex; gap: 12px; align-items: center; border-bottom: 1px solid #1e293b; flex-wrap: wrap; }
     .toolbar select, .toolbar input { padding: 6px 12px; border-radius: 6px; border: 1px solid #334155; background: #1e293b; color: #e2e8f0; font-size: 14px; }
     .toolbar select { min-width: 200px; }
-    .toolbar input { width: 200px; }
+    .toolbar input { width: 180px; }
     .toolbar .stats { margin-left: auto; font-size: 12px; color: #94a3b8; }
+    .layers { display: flex; gap: 4px; }
+    .layers button { padding: 4px 10px; border-radius: 4px; border: 2px solid; font-size: 11px; font-weight: 700; cursor: pointer; transition: all .15s; }
+    .layers button.active { color: #fff; }
+    .layers button:not(.active) { background: transparent; }
     #graph { width: 100%; height: calc(100vh - 130px); }
-    .legend { padding: 8px 20px; display: flex; gap: 20px; border-top: 1px solid #1e293b; font-size: 12px; }
+    .legend { padding: 8px 20px; display: flex; gap: 16px; border-top: 1px solid #1e293b; font-size: 11px; flex-wrap: wrap; }
     .legend span { display: flex; align-items: center; gap: 4px; }
-    .legend .dot { width: 10px; height: 10px; border-radius: 50%; }
-    .legend .box { width: 10px; height: 10px; border-radius: 2px; }
-    #detail { padding: 12px 20px; border-top: 1px solid #1e293b; display: none; max-height: 150px; overflow: auto; font-size: 13px; }
+    .legend .dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; }
+    .legend .box { width: 10px; height: 10px; border-radius: 2px; display: inline-block; }
+    #detail { padding: 12px 20px; border-top: 1px solid #1e293b; display: none; max-height: 180px; overflow: auto; font-size: 13px; background: #1e293b; }
     #detail h3 { font-size: 15px; margin-bottom: 4px; }
-    #detail code { color: #94a3b8; font-size: 12px; }
-    #detail p { color: #94a3b8; margin-top: 4px; }
-    .title { font-weight: 700; font-size: 16px; }
+    #detail code { color: #94a3b8; font-size: 12px; display: block; margin: 4px 0; }
+    #detail p { color: #cbd5e1; margin-top: 4px; font-size: 12px; }
     .loading { position: absolute; top: 50%; left: 50%; transform: translate(-50%,-50%); color: #94a3b8; }
+    .title { font-weight: 700; font-size: 16px; }
   </style>
 </head>
 <body>
@@ -31,9 +35,15 @@
     <span class="title">🧠 Xanther Graph</span>
     <select id="repoSelect"></select>
     <input id="search" type="text" placeholder="Search symbols..." />
+    <div class="layers">
+      <button id="btnL1" class="active" style="border-color:#10b981;background:#10b981" onclick="toggleLayer('ast')">L1: AST</button>
+      <button id="btnL2" class="active" style="border-color:#f59e0b;background:#f59e0b;color:#000" onclick="toggleLayer('descriptions')">L2: Desc</button>
+      <button id="btnL3" style="border-color:#ef4444;color:#ef4444" onclick="toggleLayer('component_docs')">L3: Docs</button>
+      <button id="btnL4" style="border-color:#ec4899;color:#ec4899" onclick="toggleLayer('architecture')">L4: Arch</button>
+    </div>
     <span class="stats" id="stats">Loading...</span>
   </div>
-  <div id="graph"><div class="loading" id="loadingText">Loading graph data...</div></div>
+  <div id="graph" style="position:relative"><div class="loading" id="loadingText">Loading graph data...</div></div>
   <div id="detail">
     <h3 id="detailName"></h3>
     <code id="detailMeta"></code>
@@ -44,25 +54,50 @@
     <span><span class="dot" style="background:#10b981"></span> Function</span>
     <span><span class="dot" style="background:#06b6d4"></span> Method</span>
     <span><span class="dot" style="background:#6366f1"></span> Module</span>
-    <span style="margin-left:20px">— <span style="color:#3b82f6">Calls</span></span>
+    <span><span class="box" style="background:#f59e0b"></span> Description (L2)</span>
+    <span><span class="box" style="background:#ef4444"></span> ComponentDoc (L3)</span>
+    <span><span class="box" style="background:#ec4899"></span> Architecture (L4)</span>
+    <span style="margin-left:12px">— <span style="color:#3b82f6">Calls</span></span>
     <span>-- <span style="color:#22c55e">Imports</span></span>
     <span>━ <span style="color:#ef4444">Inherits</span></span>
+    <span>→ <span style="color:#f59e0b">DESCRIBED_BY</span></span>
+    <span>→ <span style="color:#ec4899">PART_OF_ARCH</span></span>
   </div>
 
   <script>
     const API = '';
     let network = null;
     let allNodeData = {};
+    let cachedData = null;
+    let activeLayers = { ast: true, descriptions: true, component_docs: false, architecture: false };
 
-    const colors = {
+    const nodeColors = {
       class: { background: '#8b5cf6', border: '#6d28d9' },
       function: { background: '#10b981', border: '#059669' },
       method: { background: '#06b6d4', border: '#0891b2' },
       module: { background: '#6366f1', border: '#4f46e5' },
-      import: { background: '#f59e0b', border: '#d97706' },
+      description: { background: '#f59e0b', border: '#d97706' },
+      component_doc: { background: '#ef4444', border: '#dc2626' },
+      architecture: { background: '#ec4899', border: '#db2777' },
     };
 
-    const edgeColors = { CALLS: '#3b82f6', IMPORTS: '#22c55e', INHERITS: '#ef4444', CONTAINS: '#475569' };
+    const edgeColors = { CALLS: '#3b82f6', IMPORTS: '#22c55e', INHERITS: '#ef4444', CONTAINS: '#475569', DESCRIBED_BY: '#f59e0b', DETAILED_IN: '#ef4444', PART_OF_ARCHITECTURE: '#ec4899' };
+
+    function toggleLayer(layer) {
+      activeLayers[layer] = !activeLayers[layer];
+      const btnMap = { ast: 'btnL1', descriptions: 'btnL2', component_docs: 'btnL3', architecture: 'btnL4' };
+      const btn = document.getElementById(btnMap[layer]);
+      if (activeLayers[layer]) {
+        btn.classList.add('active');
+        btn.style.background = btn.style.borderColor;
+        btn.style.color = layer === 'descriptions' ? '#000' : '#fff';
+      } else {
+        btn.classList.remove('active');
+        btn.style.background = 'transparent';
+        btn.style.color = btn.style.borderColor;
+      }
+      if (cachedData) renderGraph(cachedData);
+    }
 
     async function loadRepos() {
       const res = await fetch(`${API}/api/graph/repos`);
@@ -81,89 +116,184 @@
 
     async function loadGraph(repoId) {
       document.getElementById('loadingText').style.display = 'block';
-      const [nodesRes, edgesRes] = await Promise.all([
-        fetch(`${API}/api/graph/nodes?repo_id=${repoId}&limit=500`),
-        fetch(`${API}/api/graph/edges?repo_id=${repoId}&limit=1000`),
-      ]);
-      const nodesData = await nodesRes.json();
-      const edgesData = await edgesRes.json();
-      const rawNodes = nodesData.nodes || [];
-      const rawEdges = edgesData.edges || [];
-
-      // Filter: skip imports and variables for cleaner graph
-      const filteredNodes = rawNodes.filter(n => !['import','variable','decorator','argument'].includes(n.kind));
-
-      const nodes = filteredNodes.map(n => {
-        allNodeData[n.id] = n;
-        const c = colors[n.kind] || colors.function;
-        return {
-          id: n.id,
-          label: n.name || '?',
-          color: c,
-          size: n.kind === 'class' ? 25 : n.kind === 'module' ? 20 : 14,
-          shape: n.kind === 'class' ? 'box' : n.kind === 'module' ? 'diamond' : 'dot',
-          title: `${n.kind}: ${n.name}\n${n.filepath}\nLines ${n.start_line}-${n.end_line}`,
-          font: { color: '#e2e8f0', size: 10 },
-        };
-      });
-
-      const nodeIds = new Set(nodes.map(n => n.id));
-      const edges = rawEdges
-        .filter(e => nodeIds.has(e.source) && nodeIds.has(e.target))
-        .map(e => ({
-          from: e.source,
-          to: e.target,
-          color: { color: edgeColors[e.relation] || '#475569', opacity: 0.5 },
-          arrows: 'to',
-          dashes: e.relation === 'IMPORTS',
-          width: e.relation === 'INHERITS' ? 3 : 1,
-          title: e.relation,
-        }));
-
-      document.getElementById('stats').textContent = `${nodes.length} nodes · ${edges.length} edges`;
+      const res = await fetch(`${API}/api/graph/layers?repo_id=${repoId}&limit=300`);
+      cachedData = await res.json();
       document.getElementById('loadingText').style.display = 'none';
+      renderGraph(cachedData);
+    }
+
+    function renderGraph(data) {
+      allNodeData = {};
+      const nodes = [];
+      const edges = [];
+
+      // Layer 1: AST nodes
+      if (activeLayers.ast) {
+        for (const n of data.nodes.ast || []) {
+          allNodeData[n.id] = { ...n, layer: 'ast' };
+          const c = nodeColors[n.kind] || nodeColors.function;
+          nodes.push({
+            id: n.id,
+            label: n.name || '?',
+            color: c,
+            size: n.kind === 'class' ? 22 : n.kind === 'module' ? 18 : 12,
+            shape: n.kind === 'class' ? 'box' : n.kind === 'module' ? 'diamond' : 'dot',
+            title: `[L1] ${n.kind}: ${n.name}\n${n.filepath}\nLines ${n.start_line}-${n.end_line}`,
+            font: { color: '#e2e8f0', size: 9 },
+          });
+        }
+      }
+
+      // Layer 2: Descriptions
+      if (activeLayers.descriptions) {
+        for (const d of data.nodes.descriptions || []) {
+          const nid = 'desc:' + d.id;
+          allNodeData[nid] = { ...d, layer: 'description' };
+          nodes.push({
+            id: nid,
+            label: (d.summary || '').slice(0, 30) + '...',
+            color: nodeColors.description,
+            size: 10,
+            shape: 'box',
+            title: `[L2] Summary:\n${d.summary}\n\nResponsibilities: ${(d.responsibilities||[]).join(', ')}`,
+            font: { color: '#000', size: 8 },
+          });
+        }
+      }
+
+      // Layer 3: Component docs
+      if (activeLayers.component_docs) {
+        for (const cd of data.nodes.component_docs || []) {
+          const nid = 'cdoc:' + cd.id;
+          allNodeData[nid] = { ...cd, layer: 'component_doc' };
+          nodes.push({
+            id: nid,
+            label: 'Doc: ' + (cd.algorithm || '').slice(0, 25) + '...',
+            color: nodeColors.component_doc,
+            size: 8,
+            shape: 'triangle',
+            title: `[L3] Algorithm: ${cd.algorithm}\nData flow: ${cd.data_flow}`,
+            font: { color: '#fff', size: 8 },
+          });
+        }
+      }
+
+      // Layer 4: Architecture docs
+      if (activeLayers.architecture) {
+        for (const a of data.nodes.architecture || []) {
+          const nid = 'arch:' + a.id;
+          allNodeData[nid] = { ...a, layer: 'architecture' };
+          nodes.push({
+            id: nid,
+            label: `🏛 ${a.id}\n${a.role || ''}`,
+            color: nodeColors.architecture,
+            size: 28,
+            shape: 'hexagon',
+            title: `[L4] Module: ${a.id}\nRole: ${a.role}\nPatterns: ${(a.patterns||[]).join(', ')}`,
+            font: { color: '#fff', size: 10, multi: true },
+          });
+        }
+      }
+
+      // Edges: AST (calls/imports/inherits)
+      if (activeLayers.ast) {
+        for (const e of data.edges.ast || []) {
+          edges.push({
+            from: e.source, to: e.target,
+            color: { color: edgeColors[e.relation] || '#475569', opacity: 0.5 },
+            arrows: 'to', dashes: e.relation === 'IMPORTS',
+            width: e.relation === 'INHERITS' ? 3 : 1, title: e.relation,
+          });
+        }
+      }
+
+      // Edges: DESCRIBED_BY (AST → Desc)
+      if (activeLayers.descriptions) {
+        for (const e of data.edges.described_by || []) {
+          edges.push({
+            from: e.source, to: 'desc:' + e.target,
+            color: { color: '#f59e0b', opacity: 0.4 },
+            arrows: 'to', dashes: true, width: 1, title: 'DESCRIBED_BY',
+          });
+        }
+      }
+
+      // Edges: DETAILED_IN (Desc → Doc)
+      if (activeLayers.component_docs) {
+        for (const e of data.edges.detailed_in || []) {
+          edges.push({
+            from: 'desc:' + e.source, to: 'cdoc:' + e.target,
+            color: { color: '#ef4444', opacity: 0.4 },
+            arrows: 'to', dashes: true, width: 1, title: 'DETAILED_IN',
+          });
+        }
+      }
+
+      // Edges: PART_OF_ARCHITECTURE
+      if (activeLayers.architecture) {
+        for (const e of data.edges.part_of_architecture || []) {
+          edges.push({
+            from: e.source, to: 'arch:' + e.target,
+            color: { color: '#ec4899', opacity: 0.3 },
+            arrows: 'to', dashes: true, width: 1, title: 'PART_OF_ARCHITECTURE',
+          });
+        }
+      }
+
+      // Filter edges that reference non-existent nodes
+      const nodeIds = new Set(nodes.map(n => n.id));
+      const validEdges = edges.filter(e => nodeIds.has(e.from) && nodeIds.has(e.to));
+
+      document.getElementById('stats').textContent =
+        `${nodes.length} nodes · ${validEdges.length} edges | ` +
+        `L1: ${(data.nodes.ast||[]).length} | L2: ${(data.nodes.descriptions||[]).length} | ` +
+        `L3: ${(data.nodes.component_docs||[]).length} | L4: ${(data.nodes.architecture||[]).length}`;
 
       if (network) network.destroy();
-      network = new vis.Network(document.getElementById('graph'), { nodes, edges }, {
+      network = new vis.Network(document.getElementById('graph'), { nodes, edges: validEdges }, {
         nodes: { borderWidth: 2, shadow: true },
         edges: { smooth: { enabled: true, type: 'continuous', roundness: 0.2 }, arrows: { to: { scaleFactor: 0.4 } } },
-        physics: { solver: 'forceAtlas2Based', forceAtlas2Based: { gravitationalConstant: -30, centralGravity: 0.005, springLength: 100, damping: 0.4 }, stabilization: { iterations: 100 } },
+        physics: { solver: 'forceAtlas2Based', forceAtlas2Based: { gravitationalConstant: -30, centralGravity: 0.005, springLength: 100, damping: 0.4 }, stabilization: { iterations: 80 } },
         interaction: { hover: true, tooltipDelay: 100, navigationButtons: true },
         layout: { improvedLayout: false },
       });
 
       network.on('click', params => {
-        if (params.nodes.length > 0) {
-          const n = allNodeData[params.nodes[0]];
-          if (n) showDetail(n);
-        } else {
-          document.getElementById('detail').style.display = 'none';
-        }
+        if (params.nodes.length > 0) showDetail(allNodeData[params.nodes[0]]);
+        else document.getElementById('detail').style.display = 'none';
       });
-
-      network.on('stabilizationIterationsDone', () => {
-        network.setOptions({ physics: false });
-      });
+      network.on('stabilizationIterationsDone', () => network.setOptions({ physics: false }));
     }
 
     function showDetail(n) {
+      if (!n) return;
       document.getElementById('detail').style.display = 'block';
-      document.getElementById('detailName').textContent = `${n.kind}: ${n.name}`;
-      document.getElementById('detailMeta').textContent = `${n.filepath} · lines ${n.start_line}-${n.end_line}`;
-      document.getElementById('detailDoc').textContent = n.docstring || n.signature || '';
+      const layer = n.layer || '?';
+      if (layer === 'ast') {
+        document.getElementById('detailName').textContent = `[L1] ${n.kind}: ${n.name}`;
+        document.getElementById('detailMeta').textContent = `${n.filepath} · lines ${n.start_line}-${n.end_line}`;
+        document.getElementById('detailDoc').textContent = n.docstring || n.signature || '';
+      } else if (layer === 'description') {
+        document.getElementById('detailName').textContent = `[L2] Component Description`;
+        document.getElementById('detailMeta').textContent = `For: ${n.id}`;
+        document.getElementById('detailDoc').textContent = `Summary: ${n.summary}\nResponsibilities: ${(n.responsibilities||[]).join(', ')}`;
+      } else if (layer === 'component_doc') {
+        document.getElementById('detailName').textContent = `[L3] Component Doc`;
+        document.getElementById('detailMeta').textContent = `For: ${n.id}`;
+        document.getElementById('detailDoc').textContent = `Algorithm: ${n.algorithm}\nData flow: ${n.data_flow}`;
+      } else if (layer === 'architecture') {
+        document.getElementById('detailName').textContent = `[L4] Architecture: ${n.id}`;
+        document.getElementById('detailMeta').textContent = `Role: ${n.role}`;
+        document.getElementById('detailDoc').textContent = `Patterns: ${(n.patterns||[]).join(', ')}`;
+      }
     }
 
     document.getElementById('repoSelect').addEventListener('change', e => loadGraph(e.target.value));
     document.getElementById('search').addEventListener('keydown', e => {
       if (e.key === 'Enter' && network) {
         const q = e.target.value.toLowerCase();
-        const nodeIds = Object.entries(allNodeData)
-          .filter(([_, n]) => n.name?.toLowerCase().includes(q))
-          .map(([id]) => id);
-        if (nodeIds.length > 0) {
-          network.selectNodes(nodeIds.slice(0, 10));
-          network.focus(nodeIds[0], { scale: 1.5, animation: true });
-        }
+        const ids = Object.entries(allNodeData).filter(([_, n]) => (n.name||n.summary||n.id||'').toLowerCase().includes(q)).map(([id]) => id);
+        if (ids.length > 0) { network.selectNodes(ids.slice(0, 10)); network.focus(ids[0], { scale: 1.5, animation: true }); }
       }
     });
 

@@ -459,6 +459,112 @@ def create_app() -> FastAPI:
         except Exception as e:
             raise HTTPException(status_code=500, detail=str(e))
 
+    @app.get("/api/graph/layers")
+    async def get_graph_layers(repo_id: str = Query(...), limit: int = Query(200, ge=1, le=500)):
+        """Get all XCE layers for a repo: ASTNodes + ComponentDesc + ComponentDoc + ArchitectureDoc + edges.
+        Returns nodes and edges across all layers for the multi-layer graph view."""
+        try:
+            async with state.repo_manager.driver.session() as session:
+                # Layer 1: AST nodes (functions, classes, methods only)
+                r1 = await session.run(
+                    "MATCH (n:ASTNode {repo_id: $rid}) WHERE n.kind IN ['class','function','method','module'] "
+                    "RETURN n.id AS id, n.name AS name, n.kind AS kind, n.filepath AS filepath, "
+                    "n.start_line AS start_line, n.end_line AS end_line, n.docstring AS docstring, "
+                    "n.signature AS signature, 'ast' AS layer LIMIT $lim",
+                    {"rid": repo_id, "lim": limit}
+                )
+                ast_nodes = [dict(r) async for r in r1]
+
+                # Layer 2: ComponentDesc nodes linked to AST
+                r2 = await session.run(
+                    "MATCH (a:ASTNode {repo_id: $rid})-[:DESCRIBED_BY]->(d:ComponentDesc) "
+                    "RETURN d.node_id AS id, d.summary AS summary, d.responsibilities AS responsibilities, "
+                    "'description' AS layer LIMIT $lim",
+                    {"rid": repo_id, "lim": limit}
+                )
+                desc_nodes = [dict(r) async for r in r2]
+
+                # Layer 3: ComponentDoc nodes
+                r3 = await session.run(
+                    "MATCH (d:ComponentDesc)-[:DETAILED_IN]->(doc:ComponentDoc) "
+                    "WHERE d.node_id STARTS WITH $prefix "
+                    "RETURN doc.component_id AS id, doc.algorithm_description AS algorithm, "
+                    "doc.data_flow AS data_flow, 'component_doc' AS layer LIMIT $lim",
+                    {"prefix": repo_id + ":", "lim": limit}
+                )
+                cdoc_nodes = [dict(r) async for r in r3]
+
+                # Layer 4: ArchitectureDoc nodes
+                r4 = await session.run(
+                    "MATCH (a:ASTNode {repo_id: $rid})-[:PART_OF_ARCHITECTURE]->(h:ArchitectureDoc) "
+                    "RETURN DISTINCT h.module_path AS id, h.architectural_role AS role, "
+                    "h.design_patterns AS patterns, 'architecture' AS layer LIMIT $lim",
+                    {"rid": repo_id, "lim": limit}
+                )
+                arch_nodes = [dict(r) async for r in r4]
+
+                # Edges: CALLS, IMPORTS, INHERITS between AST nodes
+                r5 = await session.run(
+                    "MATCH (a:ASTNode {repo_id: $rid})-[r]->(b:ASTNode {repo_id: $rid}) "
+                    "WHERE type(r) IN ['CALLS','IMPORTS','INHERITS'] "
+                    "RETURN a.id AS source, b.id AS target, type(r) AS relation, 'ast' AS layer "
+                    "LIMIT $lim",
+                    {"rid": repo_id, "lim": limit * 2}
+                )
+                ast_edges = [dict(r) async for r in r5]
+
+                # Edges: DESCRIBED_BY (AST → Desc)
+                r6 = await session.run(
+                    "MATCH (a:ASTNode {repo_id: $rid})-[:DESCRIBED_BY]->(d:ComponentDesc) "
+                    "RETURN a.id AS source, d.node_id AS target, 'DESCRIBED_BY' AS relation, 'layer2' AS layer "
+                    "LIMIT $lim",
+                    {"rid": repo_id, "lim": limit}
+                )
+                desc_edges = [dict(r) async for r in r6]
+
+                # Edges: DETAILED_IN (Desc → Doc)
+                r7 = await session.run(
+                    "MATCH (d:ComponentDesc)-[:DETAILED_IN]->(doc:ComponentDoc) "
+                    "WHERE d.node_id STARTS WITH $prefix "
+                    "RETURN d.node_id AS source, doc.component_id AS target, 'DETAILED_IN' AS relation, 'layer3' AS layer "
+                    "LIMIT $lim",
+                    {"prefix": repo_id + ":", "lim": limit}
+                )
+                doc_edges = [dict(r) async for r in r7]
+
+                # Edges: PART_OF_ARCHITECTURE
+                r8 = await session.run(
+                    "MATCH (a:ASTNode {repo_id: $rid})-[:PART_OF_ARCHITECTURE]->(h:ArchitectureDoc) "
+                    "RETURN a.id AS source, h.module_path AS target, 'PART_OF_ARCHITECTURE' AS relation, 'layer4' AS layer "
+                    "LIMIT $lim",
+                    {"rid": repo_id, "lim": limit}
+                )
+                arch_edges = [dict(r) async for r in r8]
+
+            return {
+                "nodes": {
+                    "ast": ast_nodes,
+                    "descriptions": desc_nodes,
+                    "component_docs": cdoc_nodes,
+                    "architecture": arch_nodes,
+                },
+                "edges": {
+                    "ast": ast_edges,
+                    "described_by": desc_edges,
+                    "detailed_in": doc_edges,
+                    "part_of_architecture": arch_edges,
+                },
+                "stats": {
+                    "ast_nodes": len(ast_nodes),
+                    "descriptions": len(desc_nodes),
+                    "component_docs": len(cdoc_nodes),
+                    "architecture": len(arch_nodes),
+                    "ast_edges": len(ast_edges),
+                },
+            }
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=str(e))
+
     @app.get("/api/graph/nodes")
     async def get_nodes(
         repo_id: str = Query(...),
