@@ -135,6 +135,13 @@ export default function GraphExplorer({ onSymbolSelect }: GraphExplorerProps) {
         containerRef.current.innerHTML = '';
       }
 
+      console.log('[Xanther] Rendering graph:', visNodes.length, 'nodes', visEdges.length, 'edges');
+
+      if (visNodes.length === 0) {
+        setLoading(false);
+        return;
+      }
+
       const options: Options = {
         nodes: {
           borderWidth: 2,
@@ -261,18 +268,14 @@ export default function GraphExplorer({ onSymbolSelect }: GraphExplorerProps) {
         </span>
       </div>
 
-      {/* Graph canvas - use key to prevent React from reconciling vis-network's DOM */}
+      {/* Graph canvas */}
       <div style={{ flex: 1, minHeight: '600px', background: 'var(--bg-primary)', position: 'relative' }}>
         {loading && (
           <div style={{ position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%,-50%)', zIndex: 10 }}>
             <div className="spinner" />
           </div>
         )}
-        <div
-          ref={containerRef}
-          style={{ width: '100%', height: '100%', minHeight: '600px' }}
-          dangerouslySetInnerHTML={{ __html: '' }}
-        />
+        <div ref={containerRef} style={{ width: '100%', height: '100%', minHeight: '600px' }} />
       </div>
 
       {/* Selected node detail */}
