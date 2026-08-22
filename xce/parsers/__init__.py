@@ -21,7 +21,7 @@ __all__ = [
 ]
 
 
-def get_default_registry() -> ParserRegistry:
+def  () -> ParserRegistry:
     """Create and return a fully-configured parser registry with all languages.
 
     Gracefully skips languages whose tree-sitter grammar fails to load.
@@ -40,7 +40,9 @@ def get_default_registry() -> ParserRegistry:
             parser_cls = getattr(mod, class_name)
             registry.register(parser_cls())
         except Exception as exc:
-            logger.error("Failed to load %s.%s: %s", module_path, class_name, exc)
+            # Only log at debug level — missing tree-sitter grammars are not errors
+            # (e.g., tree_sitter_php has version incompatibility on some platforms)
+            logger.debug("Skipped %s.%s: %s", module_path, class_name, exc)
 
     # Always available (uses stdlib ast)
     _try_register("xce.parsers.python_parser", "PythonParser")
