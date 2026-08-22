@@ -21,7 +21,7 @@ __all__ = [
 ]
 
 
-def  () -> ParserRegistry:
+def get_default_registry() -> ParserRegistry:
     """Create and return a fully-configured parser registry with all languages.
 
     Gracefully skips languages whose tree-sitter grammar fails to load.
