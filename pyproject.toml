@@ -37,6 +37,7 @@ dependencies = [
     "tree-sitter-swift>=0.7",
     "tree-sitter-c>=0.23",
     "tree-sitter-cpp>=0.23",
+    "rich>=13.0",
 ]
 
 [project.optional-dependencies]
@@ -78,6 +79,7 @@ warn_unused_configs = true
 [project.scripts]
 xce-mcp-server = "xce.server.cli:run"
 xme = "xme.cli:main"
+xanther = "xce.cli.interactive:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["xce"]

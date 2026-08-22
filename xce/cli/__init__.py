@@ -1,0 +1,1 @@
+"""Xanther CLI package."""
