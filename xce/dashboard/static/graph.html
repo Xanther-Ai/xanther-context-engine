@@ -22,14 +22,14 @@
     .legend span { display: flex; align-items: center; gap: 4px; }
     .legend .dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; }
     .legend .box { width: 10px; height: 10px; border-radius: 2px; display: inline-block; }
-    #detail { padding: 12px 20px; border-top: 1px solid #1e293b; display: none; max-height: 180px; overflow: auto; font-size: 13px; background: #1e293b; }
-    #detail h3 { font-size: 15px; margin-bottom: 4px; }
-    #detail code { color: #94a3b8; font-size: 12px; display: block; margin: 4px 0; }
-    #detail p { color: #cbd5e1; margin-top: 4px; font-size: 12px; }
+    #detail { position: fixed; right: 16px; top: 60px; width: 280px; max-height: calc(100vh - 180px); overflow: auto; padding: 16px; background: #1e293b; border: 1px solid #334155; border-radius: 8px; display: none; font-size: 13px; z-index: 100; box-shadow: 0 4px 20px rgba(0,0,0,0.4); }
+    #detail h3 { font-size: 14px; margin-bottom: 8px; color: #f1f5f9; }
+    #detail code { color: #94a3b8; font-size: 11px; display: block; margin: 6px 0; word-break: break-all; }
+    #detail p { color: #cbd5e1; margin-top: 8px; font-size: 12px; line-height: 1.5; white-space: pre-wrap; }
     .loading { position: absolute; top: 50%; left: 50%; transform: translate(-50%,-50%); color: #94a3b8; }
     .title { font-weight: 700; font-size: 16px; }
     /* vis-network tooltip */
-    div.vis-tooltip { max-width: 300px !important; word-wrap: break-word; white-space: pre-wrap; font-size: 12px; padding: 8px; background: #1e293b !important; border: 1px solid #334155 !important; color: #e2e8f0 !important; border-radius: 6px; }
+    div.vis-tooltip { max-width: 220px !important; word-wrap: break-word; white-space: pre-wrap; font-size: 11px; padding: 10px; background: #1e293b !important; border: 1px solid #334155 !important; color: #e2e8f0 !important; border-radius: 6px; line-height: 1.4; }
   </style>
 </head>
 <body>
@@ -49,6 +49,7 @@
   </div>
   <div id="graph" style="position:relative"><div class="loading" id="loadingText">Loading graph data...</div></div>
   <div id="detail">
+    <span class="close-btn" onclick="document.getElementById('detail').style.display='none'">✕</span>
     <h3 id="detailName"></h3>
     <code id="detailMeta"></code>
     <p id="detailDoc"></p>
