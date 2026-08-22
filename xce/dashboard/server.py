@@ -445,6 +445,20 @@ def create_app() -> FastAPI:
 
     # ============ Graph Endpoints ============
 
+    @app.get("/api/graph/repos")
+    async def get_graph_repos():
+        """List all repo_ids that have graph data in Neo4j (regardless of repo_manager state)."""
+        try:
+            async with state.repo_manager.driver.session() as session:
+                result = await session.run(
+                    "MATCH (n:ASTNode) RETURN DISTINCT n.repo_id AS repo_id, count(n) AS node_count "
+                    "ORDER BY node_count DESC"
+                )
+                records = [dict(r) async for r in result]
+            return {"repos": records}
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=str(e))
+
     @app.get("/api/graph/nodes")
     async def get_nodes(
         repo_id: str = Query(...),

@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Network, DataSet, Options } from 'vis-network/standalone';
 
-const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8001';
+const API_BASE = import.meta.env.VITE_API_URL || '';
 
 // PRAT Layer colors
 const LAYER_COLORS = {
@@ -50,10 +50,10 @@ export default function GraphExplorer({ onSymbolSelect }: GraphExplorerProps) {
 
   // Fetch repos
   useEffect(() => {
-    fetch(`${API_BASE}/api/repositories`)
+    fetch(`${API_BASE}/api/graph/repos`)
       .then(r => r.json())
       .then(data => {
-        const repoList = data.repositories || [];
+        const repoList = data.repos || [];
         setRepos(repoList);
         if (repoList.length > 0 && !selectedRepo) {
           // Pick first non-test repo
