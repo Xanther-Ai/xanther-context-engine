@@ -211,12 +211,14 @@ class DocGenerator:
         self.batch_size = batch_size
         
         # Check if AWS credentials are available
+        # Allow override with XCE_LLM_PROVIDER=openrouter to force OpenRouter
+        force_openrouter = os.environ.get("XCE_LLM_PROVIDER", "").lower() == "openrouter"
         aws_access_key = os.environ.get("AWS_ACCESS_KEY_ID")
         aws_secret = os.environ.get("AWS_SECRET_ACCESS_KEY")
         aws_region = os.environ.get("AWS_REGION", "us-east-1")
         
-        # Use AWS Bedrock if credentials are available
-        if aws_access_key and aws_secret:
+        # Use AWS Bedrock if credentials are available and not overridden
+        if aws_access_key and aws_secret and not force_openrouter:
             # Default to DeepSeek V3 for cheaper generation
             bedrock_model = "deepseek.v3.2"
             logger.info(f"Using AWS Bedrock for doc generation with model: {bedrock_model}")

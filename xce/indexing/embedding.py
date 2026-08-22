@@ -231,19 +231,21 @@ class EmbeddingService:
         self.dimensions = dimensions
         
         # Check if AWS credentials are available
+        # Allow override with XCE_LLM_PROVIDER=openrouter to force OpenRouter
+        force_openrouter = os.environ.get("XCE_LLM_PROVIDER", "").lower() == "openrouter"
         aws_access_key = os.environ.get("AWS_ACCESS_KEY_ID")
         aws_secret = os.environ.get("AWS_SECRET_ACCESS_KEY")
         aws_region = os.environ.get("AWS_REGION", "us-east-1")
         
         # Use AWS Bedrock if credentials are available and model is a Bedrock model
-        if aws_access_key and aws_secret and ("bedrock" in model.lower() or "titan" in model.lower() or "cohere" in model.lower()):
+        if not force_openrouter and aws_access_key and aws_secret and ("bedrock" in model.lower() or "titan" in model.lower() or "cohere" in model.lower()):
             logger.info(f"Using AWS Bedrock for embeddings with model: {model}")
             self._provider = AWSBedrockProvider(
                 model=model,
                 dimensions=dimensions,
                 region=aws_region,
             )
-        elif aws_access_key and aws_secret:
+        elif not force_openrouter and aws_access_key and aws_secret:
             # Default to Bedrock Titan if AWS credentials are available
             titan_model = "amazon.titan-embed-text-v1"
             logger.info(f"Using AWS Bedrock Titan for embeddings (default)")

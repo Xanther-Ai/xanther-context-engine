@@ -127,6 +127,13 @@ async def run_test(repo_name: str, mode: str) -> list[dict]:
     from xce.indexing.doc_generator import DocGenerator
     from xce.indexing.embedding import EmbeddingService
 
+    # Force-remove AWS creds here (inside the async function) so DocGenerator
+    # and EmbeddingService use OpenRouter, not Bedrock
+    for _k in ("AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY", "AWS_SESSION_TOKEN"):
+        os.environ.pop(_k, None)
+    # Also set provider override — boto3 reads ~/.aws/credentials even without env vars
+    os.environ["XCE_LLM_PROVIDER"] = "openrouter"
+
     settings = get_settings()
     graph_store = GraphStore(
         neo4j_uri=settings.neo4j.uri,
