@@ -105,6 +105,15 @@ async def cmd_index_interactive(
 
     t_start = time.time()
 
+    # Checkpoint for resumable indexing
+    from xce.indexing.checkpoint import IndexCheckpoint
+    ckpt = IndexCheckpoint(repo_id)
+
+    if ckpt.has_progress:
+        console.print(f"  [yellow]⟳ Resuming from previous run[/yellow]")
+        console.print(f"  [dim]Completed: {', '.join(ckpt.completed_layers)}[/dim]")
+        console.print()
+
     # Connect Neo4j
     graph_store = GraphStore(
         neo4j_uri=settings.neo4j.uri,
@@ -128,6 +137,8 @@ async def cmd_index_interactive(
     all_nodes: list[ASTNode] = []
     all_edges = []
 
+    # Layer 1 is fast — always re-run (idempotent)
+    ckpt.start_layer("layer1")
     with Progress(
         SpinnerColumn(),
         TextColumn("[bold blue]Layer 1:[/bold blue] Parsing AST"),
@@ -155,156 +166,210 @@ async def cmd_index_interactive(
     # Cross-file imports
     cross_edges = resolve_cross_file_imports(all_nodes)
     all_edges.extend(cross_edges)
+    ckpt.set_total_nodes(len(all_nodes))
+    ckpt.complete_layer("layer1")
     console.print(f"  [green]✓[/green] {len(all_nodes)} nodes, {len(all_edges)} edges parsed")
 
     # ===== STAGE 2: Store in Neo4j =====
-    with console.status("[bold yellow]Storing graph in Neo4j..."):
-        nodes_stored = await graph_store.upsert_ast_nodes(all_nodes)
-        edges_stored = await graph_store.upsert_edges(all_edges)
-    console.print(f"  [green]✓[/green] Graph stored: {nodes_stored} nodes, {edges_stored} edges")
+    if not ckpt.is_layer_done("graph"):
+        ckpt.start_layer("graph")
+        with console.status("[bold yellow]Storing graph in Neo4j..."):
+            nodes_stored = await graph_store.upsert_ast_nodes(all_nodes)
+            edges_stored = await graph_store.upsert_edges(all_edges)
+        ckpt.complete_layer("graph")
+        console.print(f"  [green]✓[/green] Graph stored: {nodes_stored} nodes, {edges_stored} edges")
+    else:
+        nodes_stored = len(all_nodes)
+        edges_stored = len(all_edges)
+        console.print(f"  [green]✓[/green] Graph: already stored (skipped)")
 
     # ===== STAGE 3: Generate component descriptions (Layer 2) =====
     all_descs = []
     if doc_gen:
-        nodes_for_docs = [n for n in all_nodes if _is_worth_documenting(n, True)]
-        console.print(f"  [dim]Smart docs: {len(nodes_for_docs)}/{len(all_nodes)} nodes selected[/dim]")
+        if not ckpt.is_layer_done("layer2"):
+            ckpt.start_layer("layer2")
+            nodes_for_docs = [n for n in all_nodes if _is_worth_documenting(n, True)]
+            done_ids = ckpt.get_done_nodes("layer2")
+            remaining = [n for n in nodes_for_docs if n.id not in done_ids]
+            console.print(f"  [dim]Smart docs: {len(nodes_for_docs)} nodes ({len(remaining)} remaining)[/dim]")
 
-        with Progress(
-            SpinnerColumn(),
-            TextColumn("[bold blue]Layer 2:[/bold blue] Component summaries"),
-            BarColumn(),
-            TaskProgressColumn(),
-            TimeElapsedColumn(),
-            console=console,
-        ) as progress:
-            batch_size = doc_gen.batch_size
-            total_batches = (len(nodes_for_docs) + batch_size - 1) // batch_size
-            task = progress.add_task("docs", total=total_batches)
-            for i in range(0, len(nodes_for_docs), batch_size):
-                batch = nodes_for_docs[i:i + batch_size]
-                try:
-                    descs = await doc_gen.generate_batch(batch)
-                    all_descs.extend(descs)
-                    await graph_store.upsert_documentation(descs)
-                except Exception:
-                    pass
-                progress.advance(task)
+            with Progress(
+                SpinnerColumn(),
+                TextColumn("[bold blue]Layer 2:[/bold blue] Component summaries"),
+                BarColumn(),
+                TaskProgressColumn(),
+                TimeElapsedColumn(),
+                console=console,
+            ) as progress:
+                batch_size = doc_gen.batch_size
+                total_batches = (len(remaining) + batch_size - 1) // batch_size
+                task = progress.add_task("docs", total=total_batches)
+                for i in range(0, len(remaining), batch_size):
+                    batch = remaining[i:i + batch_size]
+                    try:
+                        descs = await doc_gen.generate_batch(batch)
+                        all_descs.extend(descs)
+                        await graph_store.upsert_documentation(descs)
+                        for n in batch:
+                            ckpt.mark_node_done("layer2", n.id)
+                    except Exception:
+                        pass
+                    progress.advance(task)
 
-        console.print(f"  [green]✓[/green] {len(all_descs)} descriptions generated")
+            ckpt.flush()
+            ckpt.complete_layer("layer2")
+            console.print(f"  [green]✓[/green] {len(all_descs)} descriptions generated")
+        else:
+            console.print(f"  [green]✓[/green] Layer 2: already complete (skipped)")
 
     # ===== STAGE 4: Layer 3 (ComponentDoc) =====
     docs_count = 0
     deep_docs = os.environ.get("XCE_DEEP_DOCS", "true").lower() == "true"
     if doc_gen and deep_docs:
-        desc_map = {d.node_id: d for d in all_descs}
-        func_nodes = [n for n in all_nodes if n.kind in (NodeKind.FUNCTION, NodeKind.METHOD) and n.id in desc_map]
+        if not ckpt.is_layer_done("layer3"):
+            ckpt.start_layer("layer3")
+            desc_map = {d.node_id: d for d in all_descs}
+            func_nodes = [n for n in all_nodes if n.kind in (NodeKind.FUNCTION, NodeKind.METHOD) and n.id in desc_map]
+            done_ids = ckpt.get_done_nodes("layer3")
+            remaining = [n for n in func_nodes if n.id not in done_ids]
 
-        with Progress(
-            SpinnerColumn(),
-            TextColumn("[bold blue]Layer 3:[/bold blue] Detailed docs"),
-            BarColumn(),
-            TaskProgressColumn(),
-            TimeElapsedColumn(),
-            console=console,
-        ) as progress:
-            task = progress.add_task("layer3", total=len(func_nodes))
-            for node in func_nodes:
-                desc = desc_map.get(node.id)
-                if desc:
-                    try:
-                        cdoc = await doc_gen.generate_component_doc(desc, node.source_text or "")
-                        if cdoc:
-                            await graph_store.upsert_documentation([cdoc])
-                            docs_count += 1
-                    except Exception:
-                        pass
-                progress.advance(task)
+            with Progress(
+                SpinnerColumn(),
+                TextColumn("[bold blue]Layer 3:[/bold blue] Detailed docs"),
+                BarColumn(),
+                TaskProgressColumn(),
+                TimeElapsedColumn(),
+                console=console,
+            ) as progress:
+                task = progress.add_task("layer3", total=len(remaining))
+                for node in remaining:
+                    desc = desc_map.get(node.id)
+                    if desc:
+                        try:
+                            cdoc = await doc_gen.generate_component_doc(desc, node.source_text or "")
+                            if cdoc:
+                                await graph_store.upsert_documentation([cdoc])
+                                docs_count += 1
+                        except Exception:
+                            pass
+                    ckpt.mark_node_done("layer3", node.id)
+                    progress.advance(task)
 
-        console.print(f"  [green]✓[/green] {docs_count} component docs generated")
+            ckpt.flush()
+            ckpt.complete_layer("layer3")
+            console.print(f"  [green]✓[/green] {docs_count} component docs generated")
+        else:
+            console.print(f"  [green]✓[/green] Layer 3: already complete (skipped)")
 
     # ===== STAGE 5: Layer 4 (Architecture) =====
     arch_count = 0
     arch_docs = os.environ.get("XCE_ARCH_DOCS", "true").lower() == "true"
     if doc_gen and arch_docs:
-        desc_map = {d.node_id: d for d in all_descs}
-        modules = group_by_module(all_nodes)
+        if not ckpt.is_layer_done("layer4"):
+            ckpt.start_layer("layer4")
+            desc_map = {d.node_id: d for d in all_descs}
+            modules = group_by_module(all_nodes)
+            done_mods = ckpt.get_done_nodes("layer4")
+            remaining_mods = {k: v for k, v in modules.items() if k not in done_mods}
+
+            with Progress(
+                SpinnerColumn(),
+                TextColumn("[bold blue]Layer 4:[/bold blue] Architecture docs"),
+                BarColumn(),
+                TaskProgressColumn(),
+                TimeElapsedColumn(),
+                console=console,
+            ) as progress:
+                task = progress.add_task("layer4", total=len(remaining_mods))
+                for module_path, module_nodes in remaining_mods.items():
+                    module_descs = [desc_map[n.id] for n in module_nodes if n.id in desc_map]
+                    if module_descs:
+                        try:
+                            adoc = await doc_gen.generate_architecture_doc(module_path, module_descs)
+                            if adoc:
+                                await graph_store.upsert_documentation([adoc])
+                                arch_count += 1
+                        except Exception:
+                            pass
+                    ckpt.mark_node_done("layer4", module_path)
+                    progress.advance(task)
+
+            ckpt.flush()
+            ckpt.complete_layer("layer4")
+            console.print(f"  [green]✓[/green] {arch_count} architecture docs generated")
+        else:
+            console.print(f"  [green]✓[/green] Layer 4: already complete (skipped)")
+
+    # ===== STAGE 6: Embeddings =====
+    emb_count = 0
+    if not ckpt.is_layer_done("embed"):
+        ckpt.start_layer("embed")
+        embed_start = ckpt.get_embed_progress()
 
         with Progress(
             SpinnerColumn(),
-            TextColumn("[bold blue]Layer 4:[/bold blue] Architecture docs"),
+            TextColumn("[bold blue]Embeddings:[/bold blue] Vector encoding"),
             BarColumn(),
             TaskProgressColumn(),
             TimeElapsedColumn(),
             console=console,
         ) as progress:
-            task = progress.add_task("layer4", total=len(modules))
-            for module_path, module_nodes in modules.items():
-                module_descs = [desc_map[n.id] for n in module_nodes if n.id in desc_map]
-                if module_descs:
-                    try:
-                        adoc = await doc_gen.generate_architecture_doc(module_path, module_descs)
-                        if adoc:
-                            await graph_store.upsert_documentation([adoc])
-                            arch_count += 1
-                    except Exception:
-                        pass
+            texts = [embed_svc.build_embedding_text(n) for n in all_nodes]
+            batch_size = 100
+            total_batches = (len(texts) + batch_size - 1) // batch_size
+            start_batch = embed_start // batch_size
+            task = progress.add_task("embed", total=total_batches, completed=start_batch)
+            all_embeddings = [[0.0] * settings.embedding.dimensions] * embed_start  # placeholder for already-done
+            for i in range(embed_start, len(texts), batch_size):
+                batch_texts = texts[i:i + batch_size]
+                try:
+                    embs = await embed_svc.encode_batch(batch_texts)
+                    all_embeddings.extend(embs)
+                except Exception:
+                    all_embeddings.extend([[0.0] * settings.embedding.dimensions for _ in batch_texts])
+                ckpt.set_embed_progress(i + len(batch_texts))
                 progress.advance(task)
 
-        console.print(f"  [green]✓[/green] {arch_count} architecture docs generated")
+            if all_embeddings and len(all_embeddings) == len(all_nodes):
+                try:
+                    node_ids = [n.id for n in all_nodes]
+                    emb_count = await graph_store.upsert_embeddings(node_ids, all_embeddings)
+                except Exception:
+                    pass
 
-    # ===== STAGE 6: Embeddings =====
-    emb_count = 0
-    with Progress(
-        SpinnerColumn(),
-        TextColumn("[bold blue]Embeddings:[/bold blue] Vector encoding"),
-        BarColumn(),
-        TaskProgressColumn(),
-        TimeElapsedColumn(),
-        console=console,
-    ) as progress:
-        texts = [embed_svc.build_embedding_text(n) for n in all_nodes]
-        batch_size = 100
-        total_batches = (len(texts) + batch_size - 1) // batch_size
-        task = progress.add_task("embed", total=total_batches)
-        all_embeddings = []
-        for i in range(0, len(texts), batch_size):
-            batch_texts = texts[i:i + batch_size]
-            try:
-                embs = await embed_svc.encode_batch(batch_texts)
-                all_embeddings.extend(embs)
-            except Exception:
-                # Fill with zeros on failure
-                all_embeddings.extend([[0.0] * settings.embedding.dimensions for _ in batch_texts])
-            progress.advance(task)
-
-        if all_embeddings:
-            try:
-                node_ids = [n.id for n in all_nodes]
-                emb_count = await graph_store.upsert_embeddings(node_ids, all_embeddings)
-            except Exception:
-                pass
-
-    console.print(f"  [green]✓[/green] {emb_count} embeddings stored")
+        ckpt.complete_layer("embed")
+        console.print(f"  [green]✓[/green] {emb_count} embeddings stored")
+    else:
+        emb_count = len(all_nodes)
+        console.print(f"  [green]✓[/green] Embeddings: already stored (skipped)")
 
     # ===== STAGE 7: XME Bridge =====
     if run_bridge:
-        with console.status("[bold yellow]XME Bridge: syncing facts + episodes..."):
-            try:
-                from xce.memory.xme_bridge import XMEBridge
-                from datetime import datetime, timezone
-                bridge = XMEBridge(
-                    xme_db_path=os.environ.get("XME_BRIDGE_DB_PATH", ".xanther/xme.db"),
-                    neo4j_driver=graph_store._driver,
-                )
-                br = await bridge.sync_index(
-                    repo_id=repo_id, nodes=all_nodes, edges=all_edges,
-                    descriptions=all_descs, user_id="xce_agent",
-                    index_date=datetime.now(timezone.utc).isoformat(),
-                )
-                await bridge.close()
-                console.print(f"  [green]✓[/green] XME synced: {br['facts_written']} facts + {br['episodes_written']} episodes")
-            except Exception as e:
-                console.print(f"  [yellow]⚠[/yellow] XME bridge: {e}")
+        if not ckpt.is_layer_done("bridge"):
+            ckpt.start_layer("bridge")
+            with console.status("[bold yellow]XME Bridge: syncing facts + episodes..."):
+                try:
+                    from xce.memory.xme_bridge import XMEBridge
+                    from datetime import datetime, timezone
+                    bridge = XMEBridge(
+                        xme_db_path=os.environ.get("XME_BRIDGE_DB_PATH", ".xanther/xme.db"),
+                        neo4j_driver=graph_store._driver,
+                    )
+                    br = await bridge.sync_index(
+                        repo_id=repo_id, nodes=all_nodes, edges=all_edges,
+                        descriptions=all_descs, user_id="xce_agent",
+                        index_date=datetime.now(timezone.utc).isoformat(),
+                    )
+                    await bridge.close()
+                    ckpt.complete_layer("bridge")
+                    console.print(f"  [green]✓[/green] XME synced: {br['facts_written']} facts + {br['episodes_written']} episodes")
+                except Exception as e:
+                    console.print(f"  [yellow]⚠[/yellow] XME bridge: {e}")
+        else:
+            console.print(f"  [green]✓[/green] XME bridge: already synced (skipped)")
+
+    # Clear checkpoint — indexing complete
+    ckpt.clear()
 
     elapsed = time.time() - t_start
     await graph_store.close()
