@@ -505,6 +505,10 @@ def main():
     # status
     sub.add_parser("status", help="Show indexed repositories")
 
+    # dashboard
+    dash = sub.add_parser("dashboard", help="Launch web dashboard (graph explorer, memory timeline)")
+    dash.add_argument("--port", type=int, default=8001, help="Port (default: 8001)")
+
     # query
     q = sub.add_parser("query", help="Query code memory")
     q.add_argument("question", help="Natural language question about the codebase")
@@ -533,6 +537,13 @@ def main():
         ))
     elif args.command == "status":
         asyncio.run(cmd_status_interactive())
+    elif args.command == "dashboard":
+        import uvicorn
+        from xce.dashboard.server import create_app
+        app = create_app()
+        port = args.port
+        console.print(f"\n  🧠 [bold]Xanther Dashboard[/bold] → [link=http://localhost:{port}]http://localhost:{port}[/link]\n")
+        uvicorn.run(app, host="0.0.0.0", port=port, log_level="warning")
     elif args.command == "query":
         asyncio.run(cmd_query_interactive(args.question, args.repo))
 
