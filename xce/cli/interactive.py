@@ -539,8 +539,9 @@ def main():
         asyncio.run(cmd_status_interactive())
     elif args.command == "dashboard":
         import uvicorn
-        from xce.dashboard.server import create_app
-        app = create_app()
+        # Import the module-level app which includes static file serving
+        from xce.dashboard import server as _dash
+        app = _dash.app
         port = args.port
         console.print(f"\n  🧠 [bold]Xanther Dashboard[/bold] → [link=http://localhost:{port}]http://localhost:{port}[/link]\n")
         uvicorn.run(app, host="0.0.0.0", port=port, log_level="warning")
