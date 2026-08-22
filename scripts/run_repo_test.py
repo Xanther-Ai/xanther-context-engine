@@ -35,7 +35,7 @@ load_dotenv(ROOT / ".env")
 for _aws_key in ("AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY", "AWS_SESSION_TOKEN"):
     os.environ.pop(_aws_key, None)
 
-logging.basicConfig(level=logging.WARNING)
+logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 
 # ---------------------------------------------------------------------------
 # Question sets per repo
