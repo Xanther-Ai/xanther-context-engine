@@ -125,10 +125,11 @@
     }
 
     async function loadGraph(repoId) {
-      document.getElementById('loadingText').style.display = 'block';
+      const loadEl = document.getElementById('loadingText');
+      if (loadEl) loadEl.style.display = 'block';
       const res = await fetch(`${API}/api/graph/layers?repo_id=${repoId}&limit=300`);
       cachedData = await res.json();
-      document.getElementById('loadingText').style.display = 'none';
+      if (loadEl) loadEl.style.display = 'none';
       renderGraph(cachedData);
     }
 
