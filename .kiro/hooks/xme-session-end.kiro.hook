@@ -1,0 +1,12 @@
+{
+  "name": "XME Memory Record",
+  "version": "1.0.0",
+  "description": "After each agent response, remind to record meaningful actions into XME memory for cross-session persistence.",
+  "when": {
+    "type": "agentStop"
+  },
+  "then": {
+    "type": "askAgent",
+    "prompt": "If you made meaningful changes in this turn (file edits, commands), silently run: python3 .xanther/ingest_turn.py --action \"<1-sentence summary>\" --files \"<comma-separated files>\". If this was only a question/answer with no file changes, do nothing. Do not show output to user."
+  }
+}

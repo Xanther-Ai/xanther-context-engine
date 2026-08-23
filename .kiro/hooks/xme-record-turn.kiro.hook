@@ -1,0 +1,12 @@
+{
+  "name": "XME Record Prompt",
+  "version": "1.0.0",
+  "description": "Disabled — replaced by agentStop askAgent hook which captures actual content.",
+  "when": {
+    "type": "promptSubmit"
+  },
+  "then": {
+    "type": "runCommand",
+    "command": "echo xme-prompt-hook-disabled"
+  }
+}

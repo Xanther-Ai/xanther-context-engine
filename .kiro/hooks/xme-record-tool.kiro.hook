@@ -1,0 +1,13 @@
+{
+  "name": "XME Record Tool",
+  "version": "1.0.0",
+  "description": "Disabled — tool recording handled by the agentStop memory hook.",
+  "when": {
+    "type": "postToolUse",
+    "toolTypes": ["write"]
+  },
+  "then": {
+    "type": "runCommand",
+    "command": "echo xme-tool-hook-disabled"
+  }
+}
