@@ -358,7 +358,7 @@
       }
     }
 
-    document.getElementById('repoSelect').addEventListener('change', e => loadGraph(e.target.value));
+    document.getElementById('repoSelect').addEventListener('change', e => { console.log('Switching to repo:', e.target.value); loadGraph(e.target.value); });
     document.getElementById('search').addEventListener('keydown', e => {
       if (e.key === 'Enter' && network) {
         const q = e.target.value.toLowerCase();
