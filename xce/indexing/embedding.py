@@ -231,32 +231,15 @@ class EmbeddingService:
         self.dimensions = dimensions
         
         # Check if AWS credentials are available
-        # Allow override with XCE_LLM_PROVIDER=openrouter to force OpenRouter
+        # Force OpenRouter if XCE_LLM_PROVIDER=openrouter or AWS credentials exist but model is OpenRouter
         force_openrouter = os.environ.get("XCE_LLM_PROVIDER", "").lower() == "openrouter"
         aws_access_key = os.environ.get("AWS_ACCESS_KEY_ID")
         aws_secret = os.environ.get("AWS_SECRET_ACCESS_KEY")
         aws_region = os.environ.get("AWS_REGION", "us-east-1")
         
-        # Use AWS Bedrock if credentials are available and model is a Bedrock model
-        if not force_openrouter and aws_access_key and aws_secret and ("bedrock" in model.lower() or "titan" in model.lower() or "cohere" in model.lower()):
-            logger.info(f"Using AWS Bedrock for embeddings with model: {model}")
-            self._provider = AWSBedrockProvider(
-                model=model,
-                dimensions=dimensions,
-                region=aws_region,
-            )
-        elif not force_openrouter and aws_access_key and aws_secret:
-            # Default to Bedrock Titan if AWS credentials are available
-            titan_model = "amazon.titan-embed-text-v1"
-            logger.info(f"Using AWS Bedrock Titan for embeddings (default)")
-            self._provider = AWSBedrockProvider(
-                model=titan_model,
-                dimensions=1536,
-                region=aws_region,
-            )
-            self.dimensions = 1536
-            self.model = titan_model
-        else:
+        # Always prefer OpenRouter unless XCE_LLM_PROVIDER=bedrock is explicitly set
+        if force_openrouter or not aws_access_key or not aws_secret:
+            # Use OpenRouter
             logger.info(f"Using OpenRouter for embeddings with model: {model}")
             self._provider = OpenRouterProvider(
                 api_key=api_key,
@@ -264,6 +247,29 @@ class EmbeddingService:
                 dimensions=dimensions,
                 base_url=base_url,
             )
+        else:
+            # AWS Bedrock - auto-detect model and dimensions from model string
+            if "titan" in model.lower():
+                bedrock_dimensions = 1536
+                logger.info(f"Using AWS Bedrock Titan for embeddings (default)")
+            elif "cohere" in model.lower():
+                bedrock_dimensions = 1024
+                logger.info(f"Using AWS Bedrock Cohere for embeddings")
+            elif "ada" in model.lower():
+                bedrock_dimensions = 1024
+                logger.info(f"Using AWS Bedrock Ada for embeddings")
+            else:
+                # Default to Titan if we can't determine
+                bedrock_dimensions = 1536
+                logger.info(f"Using AWS Bedrock Titan for embeddings (default)")
+            
+            self._provider = AWSBedrockProvider(
+                model=model,
+                dimensions=bedrock_dimensions,
+                region=aws_region,
+            )
+            self.dimensions = bedrock_dimensions
+            self.model = model
         
         self._tokenizer = tiktoken.get_encoding("cl100k_base")
 

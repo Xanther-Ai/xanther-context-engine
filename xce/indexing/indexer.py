@@ -266,13 +266,36 @@ async def index_repository(
     _deep_docs = os.environ.get("XCE_DEEP_DOCS", "true").lower() == "true"
     if doc_generator is not None and _deep_docs:
         func_nodes = [n for n in all_nodes if n.kind in (NodeKind.FUNCTION, NodeKind.METHOD)]
-        for node in func_nodes:
+        logger.info(f"Layer 3: Generating ComponentDoc for {len(func_nodes)} functions/methods")
+        
+        # Process Layer 3 concurrently for speedup
+        import asyncio
+        _layer3_workers = int(os.environ.get("XCE_LAYER3_WORKERS", "10"))
+        logger.info(f"Layer 3: Using {_layer3_workers} concurrent workers")
+        
+        async def process_component_doc(node):
             desc = desc_map.get(node.id)
             if desc:
-                component_doc = await doc_generator.generate_component_doc(desc, source_by_id.get(node.id, ""))
+                component_doc = await doc_generator.generate_component_doc(
+                    desc, source_by_id.get(node.id, "")
+                )
                 if component_doc:
                     await graph_store.upsert_documentation([component_doc])
-                    result.docs_count += 1
+                    return True
+            return False
+        
+        # Process concurrently with bounded concurrency
+        tasks = [process_component_doc(node) for node in func_nodes]
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+        
+        # Count successes and handle errors
+        successes = sum(1 for r in results if r is True)
+        failures = sum(1 for r in results if isinstance(r, Exception))
+        if failures:
+            logger.warning(f"Layer 3: {failures} component docs failed to generate")
+        
+        result.docs_count += successes
+        logger.info(f"Layer 3: Generated {successes} ComponentDocs")
     elif doc_generator is not None and not _deep_docs:
         logger.debug("Layer 3 (ComponentDoc) skipped — set XCE_DEEP_DOCS=true to enable")
 
@@ -282,13 +305,38 @@ async def index_repository(
     modules = group_by_module(all_nodes)
     _arch_docs = os.environ.get("XCE_ARCH_DOCS", "true").lower() == "true"
     if doc_generator is not None and _arch_docs:
+        # Filter modules with available descs
+        modules_with_descs = []
         for module_path, module_nodes in modules.items():
             module_descs = [desc_map[n.id] for n in module_nodes if n.id in desc_map]
             if module_descs:
-                arch_doc = await doc_generator.generate_architecture_doc(module_path, module_descs)
-                if arch_doc:
-                    await graph_store.upsert_documentation([arch_doc])
-                    result.docs_count += 1
+                modules_with_descs.append((module_path, module_descs))
+        
+        logger.info(f"Layer 4: Generating ArchitectureDoc for {len(modules_with_descs)} modules")
+        
+        # Process Layer 4 concurrently for speedup
+        async def process_arch_doc(module_path, module_descs):
+            arch_doc = await doc_generator.generate_architecture_doc(module_path, module_descs)
+            if arch_doc:
+                await graph_store.upsert_documentation([arch_doc])
+                return True
+            return False
+        
+        # Process concurrently with bounded concurrency
+        tasks = [
+            process_arch_doc(module_path, module_descs)
+            for module_path, module_descs in modules_with_descs
+        ]
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+        
+        # Count successes and handle errors
+        successes = sum(1 for r in results if r is True)
+        failures = sum(1 for r in results if isinstance(r, Exception))
+        if failures:
+            logger.warning(f"Layer 4: {failures} architecture docs failed to generate")
+        
+        result.docs_count += successes
+        logger.info(f"Layer 4: Generated {successes} ArchitectureDocs")
     elif doc_generator is not None and not _arch_docs:
         logger.debug("Layer 4 (ArchitectureDoc) skipped — set XCE_ARCH_DOCS=true to enable")
 

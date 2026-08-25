@@ -68,11 +68,13 @@ class CodeMemory:
         xme_db_path: str = ".xanther/xme.db",
         opensearch_url: Optional[str] = None,
         embedder: Optional[Any] = None,
+        embedding_service: Optional[Any] = None,
     ) -> None:
         self._driver = neo4j_driver
         self._xme_db_path = xme_db_path
         self._opensearch_url = opensearch_url
         self._embedder = embedder
+        self._embedding_service = embedding_service  # EmbeddingService for episode embeddings
         self._has_xme = _ensure_xme()
         self._tfg: Optional[Any] = None
         self._episodic: Optional[Any] = None
@@ -106,8 +108,30 @@ class CodeMemory:
         except Exception as e:
             logger.warning("EpisodicStore init failed: %s", e)
 
+        # Initialize Neo4j vector index for episode embeddings
+        await self._init_episode_vector_index()
+
         self._ready = True
         logger.info("CodeMemory ready (xme=%s, episodic=%s)", bool(self._tfg), bool(self._episodic))
+
+    async def _init_episode_vector_index(self) -> None:
+        """Create Neo4j vector index for episode embeddings (512-dim)."""
+        try:
+            async with self._driver.session() as session:
+                await session.run(
+                    "CREATE VECTOR INDEX episode_embedding_idx IF NOT EXISTS "
+                    "FOR (e:EpisodeEmbedding) ON (e.vector) "
+                    "OPTIONS {indexConfig: {`vector.dimensions`: 512, "
+                    "`vector.similarity_function`: 'cosine'}}"
+                )
+                # Uniqueness constraint for episode nodes
+                await session.run(
+                    "CREATE CONSTRAINT episode_emb_id IF NOT EXISTS "
+                    "FOR (e:EpisodeEmbedding) REQUIRE e.episode_id IS UNIQUE"
+                )
+            logger.info("Episode vector index ready (512-dim, cosine)")
+        except Exception as e:
+            logger.warning("Episode vector index creation failed: %s", e)
 
     # ------------------------------------------------------------------
     # Primary query interface
@@ -217,10 +241,62 @@ class CodeMemory:
             ep.turns.append(Turn(role="assistant", content=transcript))
             await self._episodic.save_episode(ep)
             logger.debug("Recorded agent action: %s", action[:60])
+
+            # Store embedding in Neo4j for vector search
+            await self._store_episode_embedding(
+                episode_id=ep.episode_id,
+                text=action,
+                repo_id=repo_id,
+                summary=action[:200],
+                files=files,
+                outcome=outcome,
+            )
+
             return ep.episode_id
         except Exception as e:
             logger.warning("Failed to record action: %s", e)
             return None
+
+    async def _store_episode_embedding(
+        self,
+        episode_id: str,
+        text: str,
+        repo_id: str,
+        summary: str = "",
+        files: Optional[list[str]] = None,
+        outcome: str = "success",
+    ) -> None:
+        """Embed episode text and store as EpisodeEmbedding node in Neo4j."""
+        if self._embedding_service is None:
+            return
+
+        try:
+            vector = await self._embedding_service.encode(text)
+            files_str = ",".join(files or [])
+            ts = datetime.now(timezone.utc).isoformat()
+
+            async with self._driver.session() as session:
+                await session.run(
+                    "MERGE (e:EpisodeEmbedding {episode_id: $eid}) "
+                    "SET e.vector = $vector, "
+                    "    e.repo_id = $repo_id, "
+                    "    e.summary = $summary, "
+                    "    e.files = $files, "
+                    "    e.outcome = $outcome, "
+                    "    e.created_at = $ts",
+                    {
+                        "eid": episode_id,
+                        "vector": vector,
+                        "repo_id": repo_id,
+                        "summary": summary[:500],
+                        "files": files_str,
+                        "outcome": outcome,
+                        "ts": ts,
+                    },
+                )
+            logger.debug("Stored episode embedding: %s", episode_id[:8])
+        except Exception as e:
+            logger.warning("Failed to store episode embedding: %s", e)
 
     async def record_decision(
         self,
@@ -333,7 +409,18 @@ class CodeMemory:
         user_id: str,
         agent_actions_only: bool = False,
     ) -> list[dict[str, Any]]:
-        """Search XME episodic store for relevant code sessions/files."""
+        """Search XME episodic store for relevant code sessions/files.
+        
+        Uses Neo4j vector search when embedding_service is available (semantic),
+        falls back to SQLite FTS5 (keyword) otherwise.
+        """
+        # Try vector search first (more accurate, no false positives)
+        if self._embedding_service is not None:
+            vector_results = await self._vector_episode_search(query, repo_id, top_k)
+            if vector_results:
+                return vector_results
+
+        # Fallback to FTS5-based search
         if self._episodic is None:
             return []
         try:
@@ -361,6 +448,61 @@ class CodeMemory:
             return out
         except Exception as e:
             logger.debug("Episode search failed: %s", e)
+            return []
+
+    async def _vector_episode_search(
+        self,
+        query: str,
+        repo_id: str,
+        top_k: int,
+        min_score: float = 0.75,
+    ) -> list[dict[str, Any]]:
+        """Semantic vector search over episode embeddings in Neo4j.
+        
+        Returns episodes ranked by cosine similarity with minimum score threshold.
+        This eliminates the false positive problem of FTS5 keyword matching.
+        """
+        try:
+            query_vector = await self._embedding_service.encode(query)
+
+            cypher = (
+                "CALL db.index.vector.queryNodes('episode_embedding_idx', $top_k, $embedding) "
+                "YIELD node AS emb, score "
+                "WHERE emb.repo_id = $repo_id AND score >= $min_score "
+                "RETURN emb.episode_id AS episode_id, "
+                "       emb.summary AS summary, "
+                "       score, "
+                "       emb.files AS files, "
+                "       emb.outcome AS outcome, "
+                "       emb.created_at AS created_at "
+                "ORDER BY score DESC "
+                "LIMIT $limit"
+            )
+
+            async with self._driver.session() as session:
+                result = await session.run(cypher, {
+                    "top_k": top_k * 2,  # fetch extra, filter by score
+                    "embedding": query_vector,
+                    "repo_id": repo_id,
+                    "min_score": min_score,
+                    "limit": top_k,
+                })
+                records = [dict(r) async for r in result]
+
+            return [
+                {
+                    "episode_id": r["episode_id"],
+                    "summary": r["summary"] or "",
+                    "score": r["score"],
+                    "source": "vector_search",
+                    "filepath": r.get("files", ""),
+                    "outcome": r.get("outcome", ""),
+                    "snippet": r["summary"] or "",
+                }
+                for r in records
+            ]
+        except Exception as e:
+            logger.debug("Vector episode search failed (falling back to FTS5): %s", e)
             return []
 
     def _format_context(
