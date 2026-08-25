@@ -1,14 +1,13 @@
 # 🧠 Xanther — Code Intelligence + Agent Memory
 
-**One command to map your codebase into a queryable knowledge graph with multi-layer visualization.**
+**Open-source context engine for coding agents. 78.2% on SWE-bench Verified at $0.22/instance.**
 
 Xanther combines structural code analysis (XCE) with persistent agent memory (XME) to give coding agents a shared, searchable understanding of your codebase that persists across sessions.
 
 ```bash
-pip install -e .
+pip install xanther-xce
 xanther index /path/to/repo
-xanther dashboard
-# → open http://localhost:8001/graph.html
+xanther query "how does auth work?" --repo my-repo
 ```
 
 ---
@@ -18,20 +17,23 @@ xanther dashboard
 ### 1. Install
 
 ```bash
+# From PyPI (recommended)
+pip install xanther-xce
+
+# Or from source
 git clone https://github.com/Xanther-Ai/xanther-context-engine.git
 cd xanther-context-engine
-python -m venv .venv && source .venv/bin/activate
 pip install -e .
 ```
 
 ### 2. Infrastructure (Neo4j required)
 
 ```bash
-# Neo4j (knowledge graph storage)
-docker run -d --name neo4j \
+# Neo4j (knowledge graph + vector search)
+docker run -d --name xce-neo4j \
   -p 7474:7474 -p 7687:7687 \
   -e NEO4J_AUTH=neo4j/xce_dev_password \
-  neo4j:5
+  neo4j:5-community
 ```
 
 ### 3. Configure
@@ -40,7 +42,7 @@ docker run -d --name neo4j \
 cp .env.example .env
 # Edit .env — minimum needed:
 #   NEO4J_PASSWORD=xce_dev_password
-#   OPENROUTER_API_KEY=sk-or-...  (for LLM doc generation)
+#   OPENROUTER_API_KEY=sk-or-...  (for LLM doc generation + embeddings)
 ```
 
 ### 4. Index a repo
@@ -53,11 +55,182 @@ xanther index /path/to/repo --mode xme
 xanther index /path/to/repo --mode full
 ```
 
-### 5. Visualize
+### 5. Query
+
+```bash
+xanther query "how does the auth middleware handle JWT tokens?" --repo my-repo
+```
+
+### 6. Visualize
 
 ```bash
 xanther dashboard
 # → http://localhost:8001/graph.html
+```
+
+---
+
+## E2E Setup Guide (Production)
+
+### Prerequisites
+
+| Component | Purpose | Install |
+|-----------|---------|---------|
+| Python 3.9+ | Runtime | `brew install python3` |
+| Docker | Neo4j container | [docker.com](https://docker.com) |
+| Neo4j 5.x | Graph + vector storage | Via Docker (see below) |
+| OpenRouter API key | Embeddings + LLM docs | [openrouter.ai](https://openrouter.ai) |
+
+### Step-by-Step Setup
+
+```bash
+# 1. Install Xanther
+pip install xanther-xce
+
+# 2. Start Neo4j
+docker run -d --name xce-neo4j \
+  -p 7474:7474 -p 7687:7687 \
+  -e NEO4J_AUTH=neo4j/xce_dev_password \
+  -v xce_neo4j_data:/data \
+  neo4j:5-community
+
+# 3. Set environment variables
+export NEO4J_URI=bolt://localhost:7687
+export NEO4J_USER=neo4j
+export NEO4J_PASSWORD=xce_dev_password
+export OPENROUTER_API_KEY=sk-or-v1-your-key-here
+
+# 4. Index your repository
+xanther index ~/Projects/my-app --mode full
+
+# 5. Verify
+xanther status
+```
+
+### With XME (Cross-Session Memory)
+
+For full memory capabilities, also install the [Xanther Memory Engine](https://github.com/Xanther-Ai/xanther-memory-engine):
+
+```bash
+# Clone XME alongside XCE
+git clone https://github.com/Xanther-Ai/xanther-memory-engine.git
+
+# XCE auto-detects XME if it's a sibling directory
+# Memory features are then available automatically
+```
+
+### Python API (Programmatic Setup)
+
+```python
+from xce.memory.setup import XCESetup
+
+async def main():
+    # One-liner setup (reads from env vars)
+    xce = await XCESetup.create("/path/to/repo", repo_id="my-repo")
+
+    # Query codebase
+    ctx = await xce.query("how does auth work?")
+    print(ctx["context_str"])  # LLM-ready context
+
+    # Record what you learned
+    await xce.record("fixed auth bug in middleware", files=["src/auth.py"])
+
+    # Record architectural decisions
+    await xce.decide("Use JWT for stateless auth", rationale="Scales horizontally")
+
+    # Search past actions (cross-session memory)
+    past = await xce.search_episodes("auth middleware fix")
+
+    await xce.close()
+```
+
+### MCP Server (for Kiro, Claude Code, Cursor)
+
+```bash
+# Start as MCP server (stdio)
+xce serve
+
+# Start as SSE server (HTTP)
+xce serve --sse --port 8000
+```
+
+Add to your IDE's MCP config:
+```json
+{
+  "mcpServers": {
+    "xanther-xce": {
+      "command": "xce",
+      "args": ["serve"]
+    }
+  }
+}
+```
+
+---
+
+## Indexing Modes
+
+| Mode | Time | What it does | When to use |
+|------|------|-------------|-------------|
+| `xme` | 30-60s | AST parse + embeddings + XME memory sync | Quick iteration, memory-focused |
+| `full` | 5-20min | All 4 layers + embeddings + memory | First-time deep index |
+| `xce` | 5-20min | Code graph only, no memory sync | Pure code intelligence |
+
+### Indexing Layers Explained
+
+```
+Layer 1: AST Parse (tree-sitter)
+  → Classes, functions, methods, imports
+  → All languages: Python, TS, JS, Go, Rust, Java, Kotlin, C#, Ruby, Swift, C, C++
+  → ~30 seconds for most repos
+
+Layer 2: Component Summaries (LLM)
+  → One-sentence description of each function/class
+  → Dependencies and responsibilities
+  → ~2-5 minutes
+
+Layer 3: Detailed Documentation (LLM)
+  → Algorithm descriptions, data flow, error handling, edge cases
+  → Parallelized (10 workers by default, set XCE_LAYER3_WORKERS)
+  → ~5-10 minutes
+
+Layer 4: Architecture (LLM)
+  → High-level design per module
+  → Design patterns, integration points, quality attributes
+  → ~2-5 minutes
+
+Embeddings: Vector Encoding (OpenRouter)
+  → 512-dimensional vectors for each node
+  → Enables semantic search via Neo4j vector index
+  → ~1-2 minutes
+```
+
+### Incremental & Resumable
+
+```bash
+# Only re-index changed files (default)
+xanther index /path/to/repo
+
+# Force full re-index
+xanther index /path/to/repo --full
+
+# Only git-changed files
+xanther index /path/to/repo --diff
+
+# If interrupted (Ctrl+C), just re-run — picks up where it left off
+xanther index /path/to/repo --mode full
+```
+
+### Smart Docs (Cost Optimization)
+
+By default, Xanther skips generating LLM docs for trivial nodes (one-liners, getters/setters). This reduces LLM cost ~80% with minimal quality loss.
+
+```bash
+# Default (smart filtering ON)
+xanther index /path/to/repo --mode full
+
+# Generate docs for ALL nodes (slower, more expensive)
+xanther index /path/to/repo --mode full --no-smart-docs
 ```
 
 ---
@@ -79,21 +252,20 @@ xanther dashboard --port 8080     # Custom port
 xanther query "question" --repo flask  # Query code memory
 ```
 
-### Indexing Modes
-
-| Mode | Time | What it does | When to use |
-|------|------|-------------|-------------|
-| `xme` | 30-60s | AST parse + embeddings + XME memory sync | Quick iteration, memory-focused |
-| `full` | 5-20min | All 4 layers + embeddings + memory | First-time deep index |
-| `xce` | 5-20min | Code graph only, no memory sync | Pure code intelligence |
-
-### Resumable Indexing
-
-If you Ctrl+C during `--mode full`, progress is saved. Restart the same command and it picks up from where it left off — no wasted LLM calls.
-
 ---
 
-## Architecture
+## Benchmarks (SWE-bench Verified)
+
+| Model | Configuration | Resolve Rate | Cost/Instance |
+|-------|--------------|--------------|---------------|
+| Sonnet 4.0 (baseline) | mini-swe-agent | 66% | $1.50 |
+| Sonnet 4.0 + XCE | Resolve@1 | **73.4%** | $1.20 |
+| MiniMax M2.5 + XCE | SWE-bench Verified | **78.2%** | **$0.22** |
+| Claude 4.5 Opus | Leaderboard | 76.8% | $8.50 |
+
+**8,427 XCE tool calls** across 499 instances. Full results: [xanther.ai/benchmarks](https://xanther.ai/benchmarks/)
+
+---
 
 ```
 ┌─────────────────────────────────────────────────────────┐
@@ -198,9 +370,12 @@ xce/
 
 ## License
 
-Apache 2.0
+MIT
 
 ## Links
 
-- **XCE (this repo):** https://github.com/Xanther-Ai/xanther-context-engine
-- **XME (memory engine):** https://github.com/Xanther-Ai/xanther-memory-engine
+- **Website:** [xanther.ai](https://xanther.ai)
+- **Benchmarks:** [xanther.ai/benchmarks](https://xanther.ai/benchmarks/)
+- **XCE (this repo):** [github.com/Xanther-Ai/xanther-context-engine](https://github.com/Xanther-Ai/xanther-context-engine)
+- **XME (memory engine):** [github.com/Xanther-Ai/xanther-memory-engine](https://github.com/Xanther-Ai/xanther-memory-engine)
+- **PyPI:** [pypi.org/project/xanther-xce](https://pypi.org/project/xanther-xce/) *(coming soon)*
