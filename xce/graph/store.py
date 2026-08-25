@@ -415,13 +415,11 @@ class GraphStore:
         """List all indexed repositories with their statistics."""
         cypher = """
         MATCH (n:ASTNode)
+        WHERE n.repo_id IS NOT NULL
         OPTIONAL MATCH (n)-[r]->(m:ASTNode)
         WITH n.repo_id AS repo_id, count(DISTINCT n) AS node_count, count(DISTINCT r) AS edge_count
-        OPTIONAL MATCH (n2:ASTNode {repo_id: repo_id})
-        WHERE n2.last_indexed IS NOT NULL
-        WITH repo_id, node_count, edge_count, max(n2.last_indexed) AS last_indexed
-        RETURN repo_id, node_count, edge_count, last_indexed
-        ORDER BY last_indexed DESC
+        RETURN repo_id, node_count, edge_count
+        ORDER BY node_count DESC
         """
 
         async with self._driver.session() as session:
