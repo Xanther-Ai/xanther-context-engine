@@ -166,6 +166,40 @@ Add to your IDE's MCP config:
 }
 ```
 
+### Auto-Recording Hooks (XME Memory)
+
+Install hooks to automatically record agent actions into XME memory. Every turn, tool call, and session end is captured for cross-session recall.
+
+```bash
+# Install hooks for Kiro + Claude Code
+xce memory hooks install /path/to/repo
+
+# Preview what would be installed (dry run)
+xce memory hooks install /path/to/repo --dry-run
+
+# Remove hooks
+xce memory hooks uninstall /path/to/repo
+```
+
+**What gets installed:**
+
+| Hook | Event | What it records |
+|------|-------|----------------|
+| `xme-session-end` | `agentStop` | Flush journal, compact, save session |
+| `xme-record-turn` | `promptSubmit` | User turn in journal |
+| `xme-record-tool` | `postToolUse` | Tool calls in journal |
+
+**Or via Python API:**
+
+```python
+from xce.memory.setup import XCESetup
+
+xce = await XCESetup.create("/path/to/repo")
+xce.install_hooks()  # Installs Kiro + Claude Code hooks
+```
+
+After installation, every agent session automatically builds cross-session memory — no manual recording needed.
+
 ---
 
 ## Indexing Modes
