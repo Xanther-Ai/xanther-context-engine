@@ -3,26 +3,36 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "xanther-context-engine"
-version = "0.1.0"
-description = "Graph RAG context retrieval system for coding agents"
+name = "xanther-xce"
+version = "0.2.0"
+description = "Open-source context engine for coding agents — architecture-aware code intelligence with cross-session memory"
 readme = "README.md"
 requires-python = ">=3.9"
 license = "MIT"
+authors = [
+    {name = "Xanther AI", email = "raj@xanther.ai"},
+]
+keywords = ["coding-agent", "context-engine", "code-intelligence", "memory", "neo4j", "embeddings", "swe-bench"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Software Development :: Libraries",
+    "Topic :: Software Development :: Quality Assurance",
+]
 dependencies = [
     "neo4j>=5.0,<6.0",
-    "asyncpg>=0.29,<1.0",  # PostgreSQL support for incremental indexing
-    "langgraph>=0.2,<0.3",
-    "langchain-core>=0.3,<0.4",
     "openai>=1.0,<2.0",
-    "mcp>=1.0,<2.0",
-    "fastapi>=0.110",
-    "uvicorn>=0.29",
-    "httpx>=0.27",
     "tiktoken>=0.7",
     "python-dotenv>=1.0",
-    "unidiff>=0.7",
+    "pydantic>=2.0",
     "pydantic-settings>=2.0",
+    "rich>=13.0",
     "tree-sitter>=0.22",
     "tree-sitter-python>=0.23",
     "tree-sitter-typescript>=0.23",
@@ -37,12 +47,26 @@ dependencies = [
     "tree-sitter-swift>=0.7",
     "tree-sitter-c>=0.23",
     "tree-sitter-cpp>=0.23",
-    "rich>=13.0",
 ]
 
 [project.optional-dependencies]
+mcp = [
+    "mcp>=1.0,<2.0",
+    "fastapi>=0.110",
+    "uvicorn>=0.29",
+    "httpx>=0.27",
+]
 memory = [
-    "xanther-memory-engine>=0.1.0",  # optional memory layer
+    "opensearch-py>=2.4,<3.0",
+]
+indexing = [
+    "asyncpg>=0.29,<1.0",
+    "langgraph>=0.2,<0.3",
+    "langchain-core>=0.3,<0.4",
+    "unidiff>=0.7",
+]
+all = [
+    "xanther-xce[mcp,memory,indexing]",
 ]
 dev = [
     "pytest>=8.0",
@@ -51,16 +75,20 @@ dev = [
     "ruff>=0.4",
     "mypy>=1.10",
 ]
-xme = [
-    "opensearch-py>=2.4,<3.0",
-]
-xme-full = [
-    "opensearch-py>=2.4,<3.0",
-    "neo4j>=5.0,<6.0",
-]
+
+[project.urls]
+Homepage = "https://xanther.ai"
+Repository = "https://github.com/Xanther-Ai/xanther-context-engine"
+Documentation = "https://xanther.ai/docs"
+Issues = "https://github.com/Xanther-Ai/xanther-context-engine/issues"
+
+[project.scripts]
+xanther = "xce.cli.interactive:main"
+xce = "xce.__main__:main"
+xce-mcp-server = "xce.server.cli:run"
 
 [tool.ruff]
-target-version = "py312"
+target-version = "py310"
 line-length = 100
 
 [tool.ruff.lint]
@@ -76,10 +104,8 @@ strict = true
 warn_return_any = true
 warn_unused_configs = true
 
-[project.scripts]
-xce-mcp-server = "xce.server.cli:run"
-xme = "xme.cli:main"
-xanther = "xce.cli.interactive:main"
-
 [tool.hatch.build.targets.wheel]
 packages = ["xce"]
+
+[tool.hatch.build.targets.sdist]
+include = ["xce/", "README.md", "LICENSE", "pyproject.toml"]
