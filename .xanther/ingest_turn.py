@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Quick ingest a memory entry into XME. Called manually or by hooks.
+"""Quick ingest a memory entry into XME with vector embeddings.
 
 Usage:
     python .xanther/ingest_turn.py --action "fixed the graph tooltip width" --files "xce/dashboard/static/graph.html"
@@ -13,6 +13,23 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+
+def _get_embedding_service():
+    """Create EmbeddingService if API key is available."""
+    try:
+        from xce.indexing.embedding import EmbeddingService
+        api_key = os.environ.get("OPENROUTER_API_KEY", "")
+        if not api_key:
+            return None
+        return EmbeddingService(
+            api_key=api_key,
+            model="openai/text-embedding-3-small",
+            dimensions=512,
+        )
+    except Exception:
+        return None
+
+
 async def main():
     p = argparse.ArgumentParser()
     p.add_argument("--action", help="What was done (e.g. 'fixed tooltip width')")
@@ -22,11 +39,26 @@ async def main():
     p.add_argument("--repo-id", default="xanther-context-engine")
     args = p.parse_args()
 
+    from dotenv import load_dotenv
+    load_dotenv(os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), '.env'))
+
     from xce.memory.code_memory import CodeMemory
     from neo4j import AsyncGraphDatabase
 
-    driver = AsyncGraphDatabase.driver("bolt://localhost:7687", auth=("neo4j", "xce_dev_password"))
-    mem = CodeMemory(neo4j_driver=driver, xme_db_path=".xanther/xme.db")
+    neo4j_uri = os.environ.get("NEO4J_URI", "bolt://localhost:7687")
+    neo4j_user = os.environ.get("NEO4J_USER", "neo4j")
+    neo4j_pass = os.environ.get("NEO4J_PASSWORD", "xce_dev_password")
+
+    driver = AsyncGraphDatabase.driver(neo4j_uri, auth=(neo4j_user, neo4j_pass))
+
+    # Create embedding service for vector episode storage
+    emb_svc = _get_embedding_service()
+
+    mem = CodeMemory(
+        neo4j_driver=driver,
+        xme_db_path=".xanther/xme.db",
+        embedding_service=emb_svc,
+    )
     await mem.init()
 
     if args.action:
@@ -43,12 +75,11 @@ async def main():
         await mem.record_decision(
             repo_id=args.repo_id,
             decision=args.decision,
+            affected_files=args.files.split(",") if args.files else None,
         )
         print(f"✓ Decision recorded: {args.decision[:60]}")
 
     if args.fact:
-        # Store as a generic fact
-        from xce.memory.code_memory import CodeMemory
         if mem._tfg:
             from datetime import datetime, timezone
             await mem._tfg.upsert_fact(
@@ -64,6 +95,8 @@ async def main():
             print(f"✓ Fact recorded: {args.fact[:60]}")
 
     await mem.close()
+    if emb_svc:
+        await emb_svc.close()
     await driver.close()
 
 asyncio.run(main())

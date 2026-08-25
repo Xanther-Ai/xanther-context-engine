@@ -329,6 +329,16 @@ class CodeMemory:
         except Exception as e:
             logger.warning("Failed to record decision: %s", e)
 
+        # Also store as an embedded episode for vector search
+        await self._store_episode_embedding(
+            episode_id=f"decision:{repo_id}:{datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S')}",
+            text=f"DECISION: {decision}. {rationale}",
+            repo_id=repo_id,
+            summary=f"Decision: {decision[:180]}",
+            files=affected_files,
+            outcome="decision",
+        )
+
     # ------------------------------------------------------------------
     # Internal helpers
     # ------------------------------------------------------------------
