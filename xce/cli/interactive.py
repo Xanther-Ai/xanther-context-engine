@@ -98,7 +98,7 @@ async def cmd_index_interactive(
         f"[dim]Path:[/dim]    {repo_path_obj}\n"
         f"[dim]ID:[/dim]      {repo_id}\n"
         f"[dim]Mode:[/dim]    {mode.upper()} {'(no LLM docs)' if mode == 'xme' else '(all layers)'}",
-        title="🧠 Xanther Index",
+        title="Xanther Index",
         border_style="blue",
     ))
     console.print()
@@ -411,7 +411,7 @@ async def cmd_status_interactive() -> None:
             console.print("[dim]  Run: xanther index /path/to/repo[/dim]\n")
             return
 
-        table = Table(title="🧠 Indexed Repositories")
+        table = Table(title="Indexed Repositories")
         table.add_column("Repo ID", style="bold")
         table.add_column("Nodes", justify="right")
         table.add_column("Edges", justify="right")
@@ -487,7 +487,7 @@ def main():
 
     parser = argparse.ArgumentParser(
         prog="xanther",
-        description="🧠 Xanther — Code Intelligence + Agent Memory",
+        description="Xanther — Code Intelligence + Agent Memory",
     )
     sub = parser.add_subparsers(dest="command")
 
@@ -543,7 +543,7 @@ def main():
         from xce.dashboard import server as _dash
         app = _dash.app
         port = args.port
-        console.print(f"\n  🧠 [bold]Xanther Dashboard[/bold] → [link=http://localhost:{port}]http://localhost:{port}[/link]\n")
+        console.print(f"\n  [bold]Xanther Dashboard[/bold] → [link=http://localhost:{port}]http://localhost:{port}[/link]\n")
         uvicorn.run(app, host="0.0.0.0", port=port, log_level="warning")
     elif args.command == "query":
         asyncio.run(cmd_query_interactive(args.question, args.repo))

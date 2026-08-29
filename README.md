@@ -1,11 +1,13 @@
-# 🧠 Xanther — Code Intelligence + Agent Memory
+# Xanther — Code Intelligence + Agent Memory
 
 **Open-source context engine for coding agents. 78.2% on SWE-bench Verified at $0.22/instance.**
 
 Xanther combines structural code analysis (XCE) with persistent agent memory (XME) to give coding agents a shared, searchable understanding of your codebase that persists across sessions.
 
 ```bash
-pip install xanther-xce
+# Install both engines (XCE + XME) in one command
+pip install "xanther-xce[all]"
+
 xanther index /path/to/repo
 xanther query "how does auth work?" --repo my-repo
 ```
@@ -651,7 +653,8 @@ MIT
 - **Benchmarks:** [xanther.ai/benchmarks](https://xanther.ai/benchmarks/)
 - **XCE (this repo):** [github.com/Xanther-Ai/xanther-context-engine](https://github.com/Xanther-Ai/xanther-context-engine)
 - **XME (memory engine):** [github.com/Xanther-Ai/xanther-memory-engine](https://github.com/Xanther-Ai/xanther-memory-engine)
-- **PyPI:** [pypi.org/project/xanther-xce](https://pypi.org/project/xanther-xce/) 
+- **PyPI (XCE):** [pypi.org/project/xanther-xce](https://pypi.org/project/xanther-xce/)
+- **PyPI (XME):** [pypi.org/project/xanther-memory-engine](https://pypi.org/project/xanther-memory-engine/)
 
 ---
 
