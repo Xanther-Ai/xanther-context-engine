@@ -654,7 +654,7 @@ MIT
 - **XCE (this repo):** [github.com/Xanther-Ai/xanther-context-engine](https://github.com/Xanther-Ai/xanther-context-engine)
 - **XME (memory engine):** [github.com/Xanther-Ai/xanther-memory-engine](https://github.com/Xanther-Ai/xanther-memory-engine)
 - **PyPI (XCE):** [pypi.org/project/xanther-xce](https://pypi.org/project/xanther-xce/)
-- **PyPI (XME):** [pypi.org/project/xanther-memory-engine](https://pypi.org/project/xanther-memory-engine/)
+- **PyPI (XME):** [pypi.org/project/xanther-xme](https://pypi.org/project/xanther-xme/)
 
 ---
 
