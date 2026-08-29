@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "xanther-xce"
-version = "0.2.0"
+version = "0.3.0"
 description = "Open-source context engine for coding agents — architecture-aware code intelligence with cross-session memory"
 readme = "README.md"
 requires-python = ">=3.9"
@@ -58,6 +58,10 @@ mcp = [
 ]
 memory = [
     "opensearch-py>=2.4,<3.0",
+    # Xanther Memory Engine (XME) — cross-session memory layers.
+    # Installed from git until published to PyPI.
+    "xanther-memory-engine @ git+https://github.com/Xanther-Ai/xanther-memory-engine.git",
+    "sentence-transformers>=2.7,<4.0",
 ]
 indexing = [
     "asyncpg>=0.29,<1.0",
@@ -65,6 +69,7 @@ indexing = [
     "langchain-core>=0.3,<0.4",
     "unidiff>=0.7",
 ]
+# Full XCE + XME bundle — one command installs both engines.
 all = [
     "xanther-xce[mcp,memory,indexing]",
 ]
@@ -103,6 +108,10 @@ python_version = "3.12"
 strict = true
 warn_return_any = true
 warn_unused_configs = true
+
+[tool.hatch.metadata]
+# Allow the git+https direct reference to xanther-memory-engine
+allow-direct-references = true
 
 [tool.hatch.build.targets.wheel]
 packages = ["xce"]

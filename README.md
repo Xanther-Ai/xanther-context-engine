@@ -45,14 +45,22 @@ Before you start, make sure you have these ready:
 ### 1. Install
 
 ```bash
-# From PyPI (recommended)
+# Run instantly with uvx — bundles XCE + XME (no install needed)
+uvx --from "xanther-xce[all]" xanther --help
+
+# Or install with pip (includes XCE + XME memory engine)
+pip install "xanther-xce[all]"
+
+# Minimal install (XCE code intelligence only, no memory)
 pip install xanther-xce
 
 # Or from source
 git clone https://github.com/Xanther-Ai/xanther-context-engine.git
 cd xanther-context-engine
-pip install -e .
+pip install -e ".[all]"
 ```
+
+> The `[all]` extra bundles the **Xanther Memory Engine (XME)** alongside XCE — one command installs both engines together.
 
 ### 2. Infrastructure (Neo4j required)
 
