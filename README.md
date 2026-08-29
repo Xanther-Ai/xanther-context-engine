@@ -12,6 +12,34 @@ xanther query "how does auth work?" --repo my-repo
 
 ---
 
+## Prerequisites
+
+Before you start, make sure you have these ready:
+
+| Requirement | Required? | Purpose | How to get it |
+|-------------|-----------|---------|---------------|
+| **Python 3.9+** | ✅ Required | Runtime | `brew install python3` / [python.org](https://python.org) |
+| **Docker** | ✅ Required | Runs Neo4j locally | [docker.com](https://docker.com) |
+| **Neo4j 5.x** | ✅ Required | Knowledge graph + vector search | Via Docker (see Quick Start) |
+| **OpenRouter API key** | ✅ Required for `full` mode | Embeddings + LLM doc generation (Layers 2–4) | [openrouter.ai/keys](https://openrouter.ai/keys) |
+| **PostgreSQL** | ⬜ Optional | Incremental indexing state | Via Docker (`docker-compose up -d postgres`) |
+| **OpenSearch** | ⬜ Optional | Episodic memory search (falls back to SQLite) | Via Docker |
+
+> **⚠️ Important — OpenRouter API key**
+>
+> An **OpenRouter API key is required** for `full` mode indexing (which generates the L2–L4 documentation layers and vector embeddings) and for semantic search.
+>
+> 1. Sign up at **[openrouter.ai](https://openrouter.ai)**
+> 2. Create a key at **[openrouter.ai/keys](https://openrouter.ai/keys)**
+> 3. Add it to your `.env`:
+>    ```bash
+>    OPENROUTER_API_KEY=sk-or-v1-your-key-here
+>    ```
+>
+> **Without an OpenRouter key** you can still run `--mode xme` (AST parse + memory sync only), which uses regex-based heuristics and needs no LLM. But you lose semantic search, doc generation, and the richer L2–L4 layers.
+
+---
+
 ## Quick Start
 
 ### 1. Install
@@ -40,10 +68,20 @@ docker run -d --name xce-neo4j \
 
 ```bash
 cp .env.example .env
-# Edit .env — minimum needed:
-#   NEO4J_PASSWORD=xce_dev_password
-#   OPENROUTER_API_KEY=sk-or-...  (for LLM doc generation + embeddings)
 ```
+
+Edit `.env` and set:
+
+```bash
+# Required
+NEO4J_PASSWORD=xce_dev_password
+
+# Required for `full` mode (embeddings + L2-L4 doc generation + semantic search)
+# Get your key at https://openrouter.ai/keys
+OPENROUTER_API_KEY=sk-or-v1-your-key-here
+```
+
+> If you skip the OpenRouter key, only `--mode xme` (AST + memory, no LLM) will work.
 
 ### 4. Index a repo
 
