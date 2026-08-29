@@ -59,8 +59,7 @@ mcp = [
 memory = [
     "opensearch-py>=2.4,<3.0",
     # Xanther Memory Engine (XME) — cross-session memory layers.
-    # Installed from git until published to PyPI.
-    "xanther-memory-engine @ git+https://github.com/Xanther-Ai/xanther-memory-engine.git",
+    "xanther-memory-engine>=0.1.0",
     "sentence-transformers>=2.7,<4.0",
 ]
 indexing = [
@@ -108,10 +107,6 @@ python_version = "3.12"
 strict = true
 warn_return_any = true
 warn_unused_configs = true
-
-[tool.hatch.metadata]
-# Allow the git+https direct reference to xanther-memory-engine
-allow-direct-references = true
 
 [tool.hatch.build.targets.wheel]
 packages = ["xce"]
