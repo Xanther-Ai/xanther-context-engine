@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "xanther-xce"
-version = "0.3.2"
+version = "0.3.3"
 description = "Open-source context engine for coding agents — architecture-aware code intelligence with cross-session memory"
 readme = "README.md"
 requires-python = ">=3.9"

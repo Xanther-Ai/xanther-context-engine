@@ -478,6 +478,39 @@ async def cmd_query_interactive(query: str, repo_id: str) -> None:
     await driver.close()
 
 
+def cmd_git_hook(action: str, repo_path: str, *, mode: str = "xme", dry_run: bool = False) -> None:
+    """Install or uninstall the post-commit auto-index git hook."""
+    from xce.git_hooks import install_git_hook, uninstall_git_hook
+
+    repo = Path(repo_path).resolve()
+
+    if action == "install":
+        try:
+            hook_file = install_git_hook(str(repo), mode=mode, dry_run=dry_run)
+        except FileNotFoundError as e:
+            console.print(f"[red]Error:[/red] {e}")
+            sys.exit(1)
+        prefix = "[dim][DRY RUN][/dim] Would install" if dry_run else "[green]✓[/green] Installed"
+        console.print()
+        console.print(f"  {prefix} post-commit hook")
+        console.print(f"  [dim]Hook:[/dim] {hook_file}")
+        console.print(f"  [dim]Runs:[/dim] xanther index {repo} --diff --mode {mode}")
+        if not dry_run:
+            console.print(
+                "\n  After each commit, changed files are re-indexed in the background."
+            )
+            console.print("  [dim]Output → .xanther/post-commit.log[/dim]")
+        console.print()
+    elif action == "uninstall":
+        removed = uninstall_git_hook(str(repo))
+        console.print()
+        if removed:
+            console.print(f"  [green]✓[/green] Removed post-commit hook block from {removed}")
+        else:
+            console.print("  [dim]No xanther post-commit hook found — nothing to remove.[/dim]")
+        console.print()
+
+
 # ---------------------------------------------------------------------------
 # CLI entry point
 # ---------------------------------------------------------------------------
@@ -514,6 +547,22 @@ def main():
     q.add_argument("question", help="Natural language question about the codebase")
     q.add_argument("--repo", required=True, help="Repository ID to search")
 
+    # git-hook
+    gh = sub.add_parser(
+        "git-hook",
+        help="Install/uninstall a post-commit auto-index hook",
+    )
+    gh_sub = gh.add_subparsers(dest="git_hook_command")
+    gh_install = gh_sub.add_parser("install", help="Install the post-commit auto-index hook")
+    gh_install.add_argument("repo_path", nargs="?", default=".", help="Repo path (default: cwd)")
+    gh_install.add_argument(
+        "--mode", choices=["xme", "xce", "full"], default="xme",
+        help="Indexing mode the hook runs (default: xme — fast, no LLM docs)",
+    )
+    gh_install.add_argument("--dry-run", action="store_true", help="Show what would be installed")
+    gh_uninstall = gh_sub.add_parser("uninstall", help="Remove the post-commit auto-index hook")
+    gh_uninstall.add_argument("repo_path", nargs="?", default=".", help="Repo path (default: cwd)")
+
     args = parser.parse_args()
 
     if not args.command:
@@ -547,6 +596,17 @@ def main():
         uvicorn.run(app, host="0.0.0.0", port=port, log_level="warning")
     elif args.command == "query":
         asyncio.run(cmd_query_interactive(args.question, args.repo))
+    elif args.command == "git-hook":
+        gh_cmd = getattr(args, "git_hook_command", None)
+        if not gh_cmd:
+            console.print("[dim]Usage: xanther git-hook <install|uninstall> [repo_path][/dim]")
+            return
+        cmd_git_hook(
+            gh_cmd,
+            args.repo_path,
+            mode=getattr(args, "mode", "xme"),
+            dry_run=getattr(args, "dry_run", False),
+        )
 
 
 if __name__ == "__main__":
