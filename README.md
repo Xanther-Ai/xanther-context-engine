@@ -214,6 +214,19 @@ Add to your IDE's MCP config:
 }
 ```
 
+Once connected, XCE exposes these MCP tools to your agent:
+
+| Tool | Purpose |
+|------|---------|
+| `xce_architecture_context` | Architectural context for a file or symbol |
+| `xce_search` | Search the knowledge graph (`semantic` \| `symbol` \| `tag`) |
+| `xce_impact_analysis` | Predict the blast radius of proposed changes |
+| `xce_trace` | Trace across abstraction levels (code ↔ component ↔ architecture) |
+| `xce_index_repo` | Index / re-index a repository |
+
+> See [`AGENTS.md`](AGENTS.md) for the recommended agent workflow — when to reach for each tool
+> (orient with `xce_architecture_context`, check impact before editing, keep the graph fresh).
+
 ### Auto-Recording Hooks (XME Memory)
 
 Install hooks to automatically record agent actions into XME memory. Every turn, tool call, and session end is captured for cross-session recall.
@@ -303,6 +316,42 @@ xanther index /path/to/repo --diff
 xanther index /path/to/repo --mode full
 ```
 
+### Auto-Indexing on Commit (Git Post-Commit Hook)
+
+Keep the knowledge graph in sync automatically — install a git **post-commit hook** that
+incrementally re-indexes changed files after every commit. No more manual `xanther index` runs.
+
+```bash
+# Install the post-commit hook into a repo (defaults to fast xme mode)
+xanther git-hook install /path/to/repo
+
+# Preview what would be installed without writing anything
+xanther git-hook install /path/to/repo --dry-run
+
+# Choose the indexing mode the hook runs (xme | xce | full)
+xanther git-hook install /path/to/repo --mode full
+
+# Remove the hook
+xanther git-hook uninstall /path/to/repo
+```
+
+**What the hook does:** after each `git commit`, it runs the following in the **background**
+so it never blocks your commit flow, appending output to `.xanther/post-commit.log`:
+
+```bash
+xanther index <repo> --diff --mode xme
+```
+
+- **`--diff`** limits parsing to files changed in the commit (fast, incremental).
+- **`--mode xme`** (default) keeps it quick: AST parse + embeddings + memory sync, **no LLM doc
+  generation**. Use `--mode full` if you want the L2–L4 docs regenerated on every commit.
+
+**Notes:**
+- The hook is **idempotent** — re-installing replaces the prior Xanther block and preserves any
+  existing `post-commit` hook content you already have.
+- Works with git **worktrees and submodules** (resolves the real `.git` directory).
+- Prefers the `xanther` executable from your active virtualenv, so it keeps working inside venvs.
+
 ### Smart Docs (Cost Optimization)
 
 By default, Xanther skips generating LLM docs for trivial nodes (one-liners, getters/setters). This reduces LLM cost ~80% with minimal quality loss.
@@ -332,6 +381,12 @@ xanther dashboard                 # Launch graph visualization UI
 xanther dashboard --port 8080     # Custom port
 
 xanther query "question" --repo flask  # Query code memory
+
+xanther git-hook install <path>   # Auto-index changed files after each commit
+xanther git-hook uninstall <path> # Remove the post-commit hook
+
+xanther memory hooks install <path>   # Auto-record agent sessions into XME memory
+xanther memory hooks uninstall <path> # Remove the XME recording hooks
 ```
 
 ---
@@ -630,6 +685,7 @@ xce/
 │   ├── doc_generator.py    # LLM doc generation (Layers 2-4)
 │   └── embedding.py        # vector encoding
 ├── parsers/                # tree-sitter language parsers
+├── git_hooks.py            # post-commit auto-index hook installer
 ├── graph/store.py          # Neo4j graph operations
 ├── memory/
 │   ├── xme_bridge.py       # XCE → XME fact sync
