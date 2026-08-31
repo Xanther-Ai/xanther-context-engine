@@ -3,7 +3,7 @@
 ## Objective
 
 Run real SWE-bench Verified issues against Django using three context engines:
-1. **Xanther (XCE)** — PRAT-based hierarchical graph
+1. **Xanther (XCE)** — RAFT-based hierarchical graph
 2. **Augment Code** — Auggie context engine
 3. **Serena** — LSP-based semantic retrieval
 

@@ -112,4 +112,4 @@ warn_unused_configs = true
 packages = ["xce"]
 
 [tool.hatch.build.targets.sdist]
-include = ["xce/", "README.md", "LICENSE", "pyproject.toml"]
+include = ["xce/", "README.md", "AGENTS.md", "LICENSE", "pyproject.toml"]

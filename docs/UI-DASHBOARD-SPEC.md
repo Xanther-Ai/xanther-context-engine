@@ -2,7 +2,7 @@
 
 ## Overview
 
-Local web dashboard at `localhost:8001` for visualizing code graphs, memory artifacts, and the PRAT algorithm layers. Launched via `xanther serve` or `xanther dashboard`.
+Local web dashboard at `localhost:8001` for visualizing code graphs, memory artifacts, and the RAFT algorithm layers. Launched via `xanther serve` or `xanther dashboard`.
 
 ## Architecture
 
@@ -40,14 +40,14 @@ Dashboard home. Shows all indexed repos with stats.
 
 Interactive force-directed graph of code symbols.
 
-**Layers (PRAT visibility toggles):**
-- **P (Parse):** Raw AST nodes — functions, classes, methods, modules
-- **R (Relate):** Edges — CALLS, IMPORTS, INHERITS, CONTAINS
-- **A (Annotate):** ComponentDescriptions, ComponentDocs overlaid on nodes
-- **T (Traverse):** Highlighted paths (click "trace from A to B")
+**Layers (RAFT visibility toggles):**
+- **R (Recursive):** Raw AST nodes parsed recursively — functions, classes, methods, modules
+- **A (Abstract):** Abstraction docs — ComponentDescriptions, ComponentDocs overlaid on nodes
+- **F (Fact):** Relational facts — edges linking nodes (CALLS, IMPORTS, INHERITS, CONTAINS)
+- **T (Tree):** Traversable tree/paths (click "trace from A to B")
 
 **Controls:**
-- Layer toggles: [P] [R] [A] [T] — show/hide each PRAT layer
+- Layer toggles: [R] [A] [F] [T] — show/hide each RAFT layer
 - Filter by kind: Functions | Classes | Methods | All
 - Filter by module: dropdown of directories
 - Search: type function name → zoom to node
@@ -125,13 +125,13 @@ Chronological view of all XME memory artifacts.
 - Test files highlighted in green
 - Risk score badge
 
-### 6. PRAT Layer Inspector (/repo/{repo_id}/prat)
+### 6. RAFT Layer Inspector (/repo/{repo_id}/raft)
 
-Shows all 4 PRAT layers side-by-side for a selected scope (file or module).
+Shows all 4 RAFT layers side-by-side for a selected scope (file or module).
 
 ```
 ┌──────────┬──────────┬──────────┬──────────┐
-│ P: Parse │ R: Relate│ A: Annot │ T: Trav  │
+│ R: Recurse│ A: Abstract│ F: Fact  │ T: Tree │
 ├──────────┼──────────┼──────────┼──────────┤
 │ class Fl │ Flask    │ "Main    │ Request  │
 │  __init__│  →run    │  app     │  →Flask  │
@@ -169,12 +169,12 @@ xce/dashboard/
 │   ├── node.html       # node detail partial
 │   ├── memory.html     # memory timeline
 │   ├── impact.html     # impact analysis view
-│   └── prat.html       # PRAT layer inspector
+│   └── raft.html       # RAFT layer inspector
 └── static/
     ├── js/
     │   ├── graph.js    # vis-network graph logic
     │   ├── memory.js   # timeline rendering
-    │   └── prat.js     # PRAT layer toggle
+    │   └── raft.js     # RAFT layer toggle
     └── css/
         └── dashboard.css
 ```
@@ -189,7 +189,7 @@ xanther dashboard --port 8080  # custom port
 ## Phase 1 (build now)
 - Repo selector
 - Code graph explorer with vis-network
-- PRAT layer toggles
+- RAFT layer toggles
 - Node detail panel
 - Basic search
 
