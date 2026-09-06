@@ -1,0 +1,35 @@
+# Dockerfile.mcp — Xanther MCP server (stdio) for the Docker MCP Catalog.
+#
+# This is a lean image dedicated to running Xanther as an MCP server over stdio
+# (`xce serve`). Unlike the top-level Dockerfile, it does NOT build the web
+# dashboard or bundle Node.js — the MCP Catalog only needs the stdio server.
+#
+# It installs the full engine (XCE code intelligence + XME agent memory) via the
+# `[all]` extra, so every MCP tool is available once the container is configured
+# with a reachable Neo4j instance (and, for full-mode features, an OpenRouter key).
+#
+# Runtime configuration is supplied by the MCP runtime as environment variables:
+#   NEO4J_URI, NEO4J_USER, NEO4J_PASSWORD   (required — knowledge graph)
+#   OPENROUTER_API_KEY                       (required for semantic search / full mode)
+
+FROM python:3.12-slim
+
+WORKDIR /app
+
+# System deps: gcc + libpq for building any wheels that need them (e.g. psycopg).
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    gcc \
+    libpq-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install project dependencies first (better layer caching).
+COPY pyproject.toml README.md ./
+COPY xce/ xce/
+
+# Install Xanther with the full engine (XCE + XME).
+RUN pip install --no-cache-dir ".[all]"
+
+# The MCP server communicates over stdio; no ports are exposed.
+# `xce serve` (no --sse) runs XCEMCPServer().run_stdio().
+ENTRYPOINT ["xce"]
+CMD ["serve"]
