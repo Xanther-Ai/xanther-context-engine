@@ -1,8 +1,32 @@
-# Xanther — Code Intelligence + Agent Memory
+<div align="center">
 
-**Open-source context engine for coding agents. 78.2% on SWE-bench Verified at $0.22/instance.**
+# Xanther Context Engine (XCE)
 
-Xanther combines structural code analysis (XCE) with persistent agent memory (XME) to give coding agents a shared, searchable understanding of your codebase that persists across sessions.
+### Your coding agent stops guessing.
+
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![Python 3.9+](https://img.shields.io/badge/python-3.9%2B-blue)](https://python.org)
+[![PyPI](https://img.shields.io/pypi/v/xanther-xce)](https://pypi.org/project/xanther-xce)
+[![SWE-bench Verified](https://img.shields.io/badge/SWE--bench%20Verified-78.2%25-brightgreen)](https://xanther.ai/benchmarks/)
+![MCP Server](https://img.shields.io/badge/MCP-server-purple)
+
+🌐 [xanther.ai](https://xanther.ai) &nbsp;·&nbsp; [Benchmarks](https://xanther.ai/benchmarks/) &nbsp;·&nbsp; [Docs](https://xanther.ai) &nbsp;·&nbsp; [XME — Memory Engine](https://github.com/Xanther-Ai/xanther-memory-engine)
+
+</div>
+
+---
+
+> Your agent reads files one by one, forgets the architecture, and burns tokens re-deriving structure every session. XCE indexes your codebase into a multi-layer knowledge graph your agent queries over MCP — so it gets precise architectural context on every tool call instead of guessing.
+
+**78.2% on SWE-bench Verified at $0.22/instance.** Works with Claude Code, Kiro, Cursor, Codex, and any MCP-compatible tool.
+
+- **Multi-layer knowledge graph.** AST structure up to architecture docs, linked into one queryable graph (RAFT).
+- **Semantic + structural search.** Find code by meaning or by symbol, across all four layers.
+- **Impact analysis.** See the blast radius of a change before you make it — callers, dependents, affected modules.
+- **Traceability.** Follow any symbol from code → component → architecture, or back down to the exact line.
+- **MCP-native.** Five tools any agent can call. No custom pipeline per setup.
+- **Cross-session memory (optional).** Bundle [XME](https://github.com/Xanther-Ai/xanther-memory-engine) so decisions and attempts persist across sessions.
+- **Open source, self-hostable.** Neo4j runs locally in Docker. MIT licensed.
 
 ```bash
 # Install both engines (XCE + XME) in one command
@@ -11,6 +35,24 @@ pip install "xanther-xce[all]"
 xanther index /path/to/repo
 xanther query "how does auth work?" --repo my-repo
 ```
+
+---
+
+## Why XCE
+
+Coding agents are smart enough. They just lack context. The usual workarounds have limits:
+
+- **Reading files one by one** starts from zero every session and burns tokens re-deriving structure.
+- **Grep / keyword search** finds text matches with no understanding of relationships.
+- **RAG / vector stores** return fuzzy chunks ranked by similarity and hope the model reconnects them.
+- **LSP "go to definition"** answers one hop at a time — no impact analysis, no architecture view.
+
+XCE takes a different path: **a persistent, multi-layer knowledge graph the agent traverses instead of re-reading source.**
+
+- Structural relationships (calls, imports, inherits) are real graph edges, not guesses.
+- LLM-generated docs (summaries, algorithms, architecture) let smaller models reason without reading raw code.
+- Every answer traces to a symbol at a file and line you can open.
+- Served over MCP, so any compatible agent gets it on every tool call with no agent changes.
 
 ---
 
@@ -202,17 +244,82 @@ xce serve
 xce serve --sse --port 8000
 ```
 
-Add to your IDE's MCP config:
+Then connect your client. Pick yours:
+
+<details>
+<summary><b>Kiro</b></summary>
+
+Add to `~/.kiro/settings/mcp.json` (global) or `.kiro/settings/mcp.json` (workspace):
+
 ```json
 {
   "mcpServers": {
     "xanther-xce": {
       "command": "xce",
-      "args": ["serve"]
+      "args": ["serve"],
+      "env": { "NEO4J_PASSWORD": "your-password" },
+      "autoApprove": ["xce_search", "xce_architecture_context", "xce_trace", "xce_impact_analysis"]
     }
   }
 }
 ```
+</details>
+
+<details>
+<summary><b>Claude Code</b></summary>
+
+```bash
+claude mcp add xanther-xce -- xce serve
+```
+</details>
+
+<details>
+<summary><b>Cursor</b></summary>
+
+Add to `.cursor/mcp.json` (project) or `~/.cursor/mcp.json` (global):
+
+```json
+{
+  "mcpServers": {
+    "xanther-xce": {
+      "command": "xce",
+      "args": ["serve"],
+      "env": { "NEO4J_PASSWORD": "your-password" }
+    }
+  }
+}
+```
+</details>
+
+<details>
+<summary><b>VS Code</b></summary>
+
+Add to your User Settings (JSON):
+
+```json
+{
+  "mcp": {
+    "servers": {
+      "xanther-xce": {
+        "command": "xce",
+        "args": ["serve"],
+        "env": { "NEO4J_PASSWORD": "your-password" }
+      }
+    }
+  }
+}
+```
+</details>
+
+<details>
+<summary><b>Anything MCP (HTTP / SSE)</b></summary>
+
+Start XCE as an SSE server and point any MCP-over-HTTP client at it:
+
+```bash
+xce serve --sse --port 8000
+```
+</details>
 
 Once connected, XCE exposes these MCP tools to your agent:
 
@@ -401,6 +508,52 @@ xanther memory hooks uninstall <path> # Remove the XME recording hooks
 | Claude 4.5 Opus | Leaderboard | 76.8% | $8.50 |
 
 **8,427 XCE tool calls** across 499 instances. Full results: [xanther.ai/benchmarks](https://xanther.ai/benchmarks/)
+
+---
+
+## How it works
+
+You ask your agent to fix a bug in the auth flow. Instead of opening files at random, it queries XCE over MCP:
+
+**1. Orient.** The agent calls `xce_architecture_context` on the auth module and gets the design back — role, patterns, integration points — without reading a single file.
+
+```
+Auth subsystem · Strategy + Decorator patterns
+Integrates: user_service, token_manager, audit_logger
+Entry: authenticate() → _validate() → token_gen()
+```
+
+**2. Check impact before editing.** Before changing `token_gen()`, it calls `xce_impact_analysis`:
+
+```
+token_gen() is called by 7 functions across 3 modules.
+Affected tests: test_auth.py, test_session.py
+⚠ session.refresh() depends on the current return shape.
+```
+
+**3. Make the change** knowing the blast radius — updating `session.refresh()` in the same pass instead of breaking it.
+
+**4. Remember (with XME).** The decision and the fix are captured automatically. Next session, the agent recalls "we moved token_gen to HMAC-SHA256, and session.refresh depends on it" instead of relearning it.
+
+Every answer traces to a symbol at a file and line you can open — the agent reasons over a graph, not a pile of guessed chunks.
+
+---
+
+## How it compares
+
+Most tools that give agents "context" pick one lane — raw structure, or fuzzy retrieval, or one-hop navigation. XCE combines a real graph, LLM-generated docs, semantic search, and impact analysis, then serves them over MCP.
+
+| | Grep / keyword | RAG / vector store | LSP (go to def) | Graph-only tools | **XCE** |
+|--|---|---|---|---|---|
+| Structural graph (calls/imports) | ❌ | ❌ | partial | ✅ | ✅ |
+| Semantic search | ❌ | ✅ | ❌ | ❌ | ✅ |
+| LLM-generated docs (L2–L4) | ❌ | ❌ | ❌ | ❌ | ✅ |
+| Impact analysis (blast radius) | ❌ | ❌ | ❌ | partial | ✅ |
+| Cross-abstraction traceability | ❌ | ❌ | ❌ | partial | ✅ |
+| Cross-session memory | ❌ | ❌ | ❌ | ❌ | ✅ via XME |
+| MCP-native tools | ❌ | varies | ✅ | varies | ✅ (5) |
+| Answer traces to file:line | ✅ | ❌ | ✅ | ✅ | ✅ |
+| Open source / self-hostable | ✅ | varies | ✅ | varies | ✅ (MIT) |
 
 ---
 
